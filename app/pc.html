@@ -1,0 +1,208 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EOPUR OS – PC</title>
+<style>
+:root{--b:#1F3864;--g:#e9ecf2}
+body{font:15px Segoe UI,Arial,sans-serif;margin:0;color:#1a1a1a;background:#fff}
+header{background:var(--b);color:#fff;padding:12px 24px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+header h1{font-size:19px;margin:0;font-weight:600}header span{font-size:13px;opacity:.85}
+nav{display:flex;gap:4px;padding:10px 24px 0;border-bottom:1px solid #ccc;flex-wrap:wrap}
+nav button{background:none;border:0;border-bottom:3px solid transparent;padding:9px 14px;font-size:15px;cursor:pointer;color:#333}
+nav button.on{border-color:var(--b);color:var(--b);font-weight:600}
+main{padding:20px 24px;max-width:1100px}
+h2{font-size:17px;color:var(--b);margin:20px 0 8px}p.s{font-size:13px;color:#555;margin:4px 0 10px}
+button.a{padding:9px 16px;margin:4px 8px 4px 0;font-size:14px;border:0;border-radius:6px;background:var(--b);color:#fff;cursor:pointer}
+button.a.g{background:var(--g);color:var(--b)}button.a.r{background:#b00020}button.a:disabled{opacity:.4;cursor:default}
+input,select,textarea{font:inherit;padding:7px;border:1px solid #999;border-radius:5px}
+table{border-collapse:collapse;width:100%;margin:8px 0}th,td{border-bottom:1px solid #ddd;padding:6px 8px;text-align:left;font-size:14px;vertical-align:top}th{background:#f1f3f7;font-size:13px}
+.ok{color:#17691f;font-weight:600}.ko{color:#b00020;font-weight:600}.att{color:#8a5a00;font-weight:600}
+.carte{border:1px solid #ccc;border-radius:8px;padding:12px 14px;margin:10px 0}.conf{border-color:#b00020;background:#fff6f6}
+.deux{display:grid;grid-template-columns:1fr 1fr;gap:12px}.deux>div{background:#fff;border:1px solid #ddd;border-radius:6px;padding:8px}
+#jr{font:13px Consolas,monospace;white-space:pre-wrap;background:#f4f4f4;padding:12px;border-radius:6px}
+#msg{padding:10px 24px;font-weight:600;display:none}
+</style></head><body>
+<header><h1>EOPUR OS – PC</h1><span id="ch">prototype · données fictives</span><span id="etatD"></span></header>
+<div id="msg"></div>
+<nav id="nav"></nav><main id="vue"></main>
+<script src="jszip.min.js"></script><script src="sql-wasm.js"></script><script src="commun.js"></script>
+<script>
+const $=id=>document.getElementById(id),esc=EO.esc;
+let SQL,db=null,dBase=null,dOD=null,dVT,dVP,dTR,onglet='demarrage',chantierSel=null,propositions=[];
+const NOM_BASE='eopur_os.sqlite';
+function msg(t,c){const m=$('msg');m.textContent=t;m.style.display=t?'block':'none';m.style.background=c==='ko'?'#FFC7CE':c==='att'?'#FFEB9C':'#C6EFCE';}
+// ---------- mémorisation des dossiers (pour ne les choisir qu'une fois)
+function idb(){return new Promise((ok,ko)=>{const r=indexedDB.open('eopur-pc',1);r.onupgradeneeded=()=>r.result.createObjectStore('h');r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});}
+async function memo(k,v){const d=await idb();return new Promise((ok,ko)=>{const s=d.transaction('h',v===undefined?'readonly':'readwrite').objectStore('h');const r=v===undefined?s.get(k):s.put(v,k);r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});}
+// ---------- base
+const q=(sql,p)=>{const st=db.prepare(sql);st.bind(p||[]);const o=[];while(st.step())o.push(st.getAsObject());st.free();return o;};
+const un=(sql,p)=>{const r=q(sql,p);return r.length?Object.values(r[0])[0]:null;};
+const run=(sql,p)=>db.run(sql,p||[]);
+function journal(ev,detail){run('INSERT INTO journal(quand,evenement,detail) VALUES(?,?,?)',[EO.now(),ev,detail||'']);}
+async function ecrire(dir,nom,data){const h=await dir.getFileHandle(nom,{create:true});const w=await h.createWritable();await w.write(data);await w.close();}
+async function enregistrer(){await ecrire(dBase,NOM_BASE,db.export());}
+async function sauvegarde(){const s=await dBase.getDirectoryHandle('sauvegardes',{create:true});const d=new Date(),p=n=>String(n).padStart(2,'0');
+  const nom='base_'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'_'+String(d.getMilliseconds()).padStart(3,'0')+'.sqlite';await ecrire(s,nom,db.export());return nom;}
+const SCHEMA=`
+CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY,v TEXT);
+CREATE TABLE IF NOT EXISTS chantiers(id TEXT PRIMARY KEY,nom TEXT NOT NULL,bailleur TEXT,revision INTEGER NOT NULL DEFAULT 1,cree_le TEXT,maj_le TEXT);
+CREATE TABLE IF NOT EXISTS logements(id TEXT PRIMARY KEY,id_chantier TEXT NOT NULL,adresse TEXT,etage TEXT,numero TEXT,typo TEXT,statut TEXT DEFAULT '',observation TEXT DEFAULT '',repassage TEXT DEFAULT '',passage_prevu TEXT DEFAULT '',revision INTEGER NOT NULL DEFAULT 1,maj_le TEXT,maj_par TEXT);
+CREATE TABLE IF NOT EXISTS historique(id INTEGER PRIMARY KEY AUTOINCREMENT,id_logement TEXT NOT NULL,revision INTEGER NOT NULL,auteur TEXT NOT NULL,quand TEXT,statut TEXT,observation TEXT,repassage TEXT,source TEXT);
+CREATE TABLE IF NOT EXISTS interventions(id TEXT PRIMARY KEY,id_logement TEXT NOT NULL,statut TEXT,observation TEXT,repassage TEXT,cree_le TEXT,appareil TEXT,id_operation TEXT);
+CREATE TABLE IF NOT EXISTS photos(id TEXT PRIMARY KEY,id_logement TEXT,id_operation TEXT,fichier TEXT,sha256 TEXT,taille INTEGER,cree_le TEXT);
+CREATE TABLE IF NOT EXISTS comptes_rendus(id TEXT PRIMARY KEY,id_chantier TEXT,texte TEXT,cree_le TEXT,appareil TEXT,id_operation TEXT);
+CREATE TABLE IF NOT EXISTS paquets(id_paquet TEXT PRIMARY KEY,empreinte TEXT,type TEXT,sens TEXT,appareil TEXT,cree_le TEXT,recu_le TEXT,integre_le TEXT,etat TEXT,fichier TEXT);
+CREATE TABLE IF NOT EXISTS operations_recues(id_operation TEXT PRIMARY KEY,id_paquet TEXT,type TEXT,etat TEXT,motif TEXT,recu_le TEXT,integre_le TEXT,cree_le TEXT,contenu TEXT);
+CREATE TABLE IF NOT EXISTS conflits(id INTEGER PRIMARY KEY AUTOINCREMENT,id_operation TEXT UNIQUE,id_logement TEXT,valeur_pc TEXT,valeur_mobile TEXT,etat TEXT,decision TEXT,decide_le TEXT);
+CREATE TABLE IF NOT EXISTS journal(id INTEGER PRIMARY KEY AUTOINCREMENT,quand TEXT,evenement TEXT,detail TEXT);`;
+async function ouvrir(base,od){
+  dBase=base;dOD=od;let f=null;try{f=await (await base.getFileHandle(NOM_BASE)).getFile();}catch(e){}
+  db=f&&f.size?new SQL.Database(new Uint8Array(await f.arrayBuffer())):new SQL.Database();db.run(SCHEMA);
+  if(!un("SELECT v FROM meta WHERE k='appareil'")){run("INSERT INTO meta VALUES('appareil',?)",['PC-'+EO.uuid().slice(0,8)]);journal('base','base créée');}
+  const ic=un('PRAGMA integrity_check');if(ic!=='ok')throw new Error('base endommagée : '+ic);
+  dVT=await od.getDirectoryHandle('vers_telephone',{create:true});dVP=await od.getDirectoryHandle('vers_pc',{create:true});dTR=await od.getDirectoryHandle('traites',{create:true});
+  await enregistrer();$('etatD').textContent='base : '+base.name+' · OneDrive : '+od.name;onglet='chantiers';dessiner();
+}
+const APP=()=>un("SELECT v FROM meta WHERE k='appareil'");
+// ---------- chantiers et logements
+function creerChantier(nom,bailleur){const id='CH-'+EO.uuid().slice(0,8);run('INSERT INTO chantiers VALUES(?,?,?,1,?,?)',[id,nom,bailleur||'',EO.now(),EO.now()]);journal('chantier créé',nom);return id;}
+function ajouterLogements(idc,adresse,nbEtages,parEtage,premier){let n=premier||1;const ids=[];
+  for(let e=0;e<nbEtages;e++)for(let k=0;k<parEtage;k++){const id='LG-'+EO.uuid().slice(0,8);run("INSERT INTO logements(id,id_chantier,adresse,etage,numero,typo,revision,maj_le,maj_par) VALUES(?,?,?,?,?,?,1,?,?)",[id,idc,adresse,e===0?'Rez-de-chaussée':'Étage '+String(e).padStart(2,'0'),String(n++),String(2+(k%3)),EO.now(),APP()]);
+    run('INSERT INTO historique(id_logement,revision,auteur,quand,source) VALUES(?,?,?,?,?)',[id,1,APP(),EO.now(),'création']);ids.push(id);}
+  run('UPDATE chantiers SET revision=revision+1,maj_le=? WHERE id=?',[EO.now(),idc]);journal('logements ajoutés',adresse+' : '+ids.length);return ids;}
+function modifierLogement(id,champs,auteur,source){const l=q('SELECT * FROM logements WHERE id=?',[id])[0];if(!l)throw new Error('logement inconnu');
+  const n=Object.assign({},l,champs);const rev=l.revision+1;
+  run('UPDATE logements SET statut=?,observation=?,repassage=?,passage_prevu=?,revision=?,maj_le=?,maj_par=? WHERE id=?',[n.statut||'',n.observation||'',n.repassage||'',n.passage_prevu||'',rev,EO.now(),auteur,id]);
+  run('INSERT INTO historique(id_logement,revision,auteur,quand,statut,observation,repassage,source) VALUES(?,?,?,?,?,?,?,?)',[id,rev,auteur,EO.now(),n.statut||'',n.observation||'',n.repassage||'',source||'']);return rev;}
+// ---------- envoi du chantier vers le téléphone
+async function preparer(idc){const c=q('SELECT * FROM chantiers WHERE id=?',[idc])[0];
+  const lg=q('SELECT id,adresse,etage,numero,typo,statut,observation,repassage,passage_prevu,revision FROM logements WHERE id_chantier=? ORDER BY adresse,CAST(numero AS INTEGER)',[idc]);
+  const p=await EO.fabriquer('chantier',APP(),[{nom:'chantier.json',data:JSON.stringify({id_chantier:c.id,nom:c.nom,bailleur:c.bailleur,revision:c.revision,logements:lg},null,1)}]);
+  await ecrire(dVT,p.nom,p.blob);run('INSERT INTO paquets VALUES(?,?,?,?,?,?,?,?,?,?)',[p.id,p.empreinte,'chantier','emis',APP(),p.manifeste.cree_le,null,null,'déposé',p.nom]);
+  journal('paquet chantier déposé',p.nom+' – '+lg.length+' logements');await enregistrer();return p;}
+// ---------- réception
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+async function deplacer(nom){try{const f=await (await dVP.getFileHandle(nom)).getFile();await ecrire(dTR,nom,await f.arrayBuffer());await dVP.removeEntry(nom);}catch(e){journal('déplacement impossible',nom+' : '+e.message);}}
+async function accuse(idPaquet,stade,lignes){const p=await EO.fabriquer('accuse',APP(),[{nom:'accuse.json',data:JSON.stringify({id_paquet_recu:idPaquet,stade,emis_le:EO.now(),operations:lignes},null,1)}]);
+  await ecrire(dVT,p.nom,p.blob);run('INSERT INTO paquets VALUES(?,?,?,?,?,?,?,?,?,?)',[p.id,p.empreinte,'accuse','emis',APP(),p.manifeste.cree_le,null,null,'déposé ('+stade+')',p.nom]);journal('accusé déposé',stade+' pour '+idPaquet.slice(0,8)+' : '+p.nom);return p;}
+function etatOp(id){const o=q('SELECT etat,motif FROM operations_recues WHERE id_operation=?',[id])[0];if(!o)return null;
+  const rv=un("SELECT l.revision FROM operations_recues o JOIN logements l ON l.id=json_extract(o.contenu,'$.id_logement') WHERE o.id_operation=?",[id]);
+  return {id_operation:id,resultat:o.etat,motif:o.motif||'',revision_nouvelle:rv};}
+function conflitAvec(op,appareil,revDebut){ // vrai si quelqu'un d'autre a modifié le logement depuis la révision connue du téléphone
+  return q('SELECT revision,auteur FROM historique WHERE id_logement=? AND revision>? ORDER BY revision',[op.id_logement,op.revision_connue||0]).some(h=>h.auteur!==appareil);}
+async function analyser(){ // lit vers_pc sans rien modifier dans la base, sauf l'accusé « reçu »
+  propositions=[];const vus=[];
+  for await(const [nom,h] of dVP.entries()){if(h.kind!=='file'||!nom.toLowerCase().endsWith('.zip'))continue;
+    const pr={nom,ops:[],etat:'',erreur:''};vus.push(pr);
+    try{let f=await h.getFile();const t=f.size;await pause(1200);f=await h.getFile();if(f.size!==t||!f.size){pr.etat='attente';pr.erreur='fichier encore en cours de synchronisation';continue;}
+      const buf=await f.arrayBuffer();let p;try{p=await EO.lire(buf);}catch(x){pr.etat='attente';pr.erreur=x.message+' – laissé en place, sera relu';journal('paquet non lisible',nom+' : '+x.message);continue;}
+      pr.m=p.m;pr.empreinte=p.empreinte;pr.contenu=p.contenu;
+      if(p.m.type!=='operations'){pr.etat='ignore';pr.erreur='type « '+p.m.type+' » : ce n\'est pas un paquet du téléphone';continue;}
+      const connu=q('SELECT etat FROM paquets WHERE id_paquet=?',[p.m.id_paquet])[0];
+      if(connu&&connu.etat==='intégré'){pr.etat='doublon';pr.erreur='paquet déjà intégré : ignoré';journal('paquet en double ignoré',p.m.id_paquet);
+        await accuse(p.m.id_paquet,'integre',p.json('operations.json').map(o=>etatOp(o.id_operation)).filter(Boolean));await deplacer(nom);await enregistrer();continue;}
+      const ops=p.json('operations.json').sort((a,b)=>a.cree_le<b.cree_le?-1:1),touches={};
+      for(const o of ops){const ligne={o,res:'',motif:''};pr.ops.push(ligne);
+        if(un('SELECT COUNT(*) FROM operations_recues WHERE id_operation=?',[o.id_operation])){ligne.res='doublon';ligne.motif='déjà reçue dans un autre paquet';continue;}
+        if(o.type==='compte_rendu'){ligne.res=un('SELECT COUNT(*) FROM chantiers WHERE id=?',[o.id_chantier])?'ok':'rejet';if(ligne.res==='rejet')ligne.motif='chantier inconnu';continue;}
+        const l=q('SELECT * FROM logements WHERE id=?',[o.id_logement])[0];
+        if(!l){ligne.res='rejet';ligne.motif='logement inconnu ou supprimé depuis le téléchargement';continue;}
+        ligne.l=l;
+        if(o.type==='photo'){ligne.res=p.contenu[o.fichier]?'ok':'rejet';if(ligne.res==='rejet')ligne.motif='photographie absente du paquet';continue;}
+        if(o.type==='intervention'){if(!touches[o.id_logement]&&conflitAvec(o,p.m.appareil)){ligne.res='conflit';ligne.motif='logement modifié sur le PC depuis le téléchargement (révision '+l.revision+', téléphone '+o.revision_connue+')';}
+          else{ligne.res='ok';touches[o.id_logement]=1;}continue;}
+        ligne.res='rejet';ligne.motif='type d\'opération inconnu';}
+      pr.etat='pret';
+      if(!connu){run('INSERT INTO paquets VALUES(?,?,?,?,?,?,?,?,?,?)',[p.m.id_paquet,p.empreinte,'operations','recu',p.m.appareil,p.m.cree_le,EO.now(),null,'reçu',nom]);journal('paquet reçu et contrôlé',nom+' – '+ops.length+' opérations – empreinte '+p.empreinte.slice(0,16));
+        await accuse(p.m.id_paquet,'recu',ops.map(o=>({id_operation:o.id_operation,resultat:'recu'})));await enregistrer();}
+    }catch(x){pr.etat='attente';pr.erreur=x.message;}}
+  propositions=vus;return vus;}
+async function integrer(pr){ // tout ou rien
+  const svg=await sauvegarde();const m=pr.m,t=EO.now(),photos=[];
+  run('BEGIN');
+  try{for(const li of pr.ops){const o=li.o;if(li.res==='doublon')continue;
+      let etat=li.res==='ok'?'integree':li.res==='conflit'?'conflit':'rejetee';
+      run('INSERT INTO operations_recues VALUES(?,?,?,?,?,?,?,?,?)',[o.id_operation,m.id_paquet,o.type,etat,li.motif||'',t,etat==='integree'?t:null,o.cree_le,JSON.stringify(o)]);
+      if(li.res==='conflit'){const l=li.l;run('INSERT INTO conflits(id_operation,id_logement,valeur_pc,valeur_mobile,etat) VALUES(?,?,?,?,?)',[o.id_operation,o.id_logement,JSON.stringify({statut:l.statut,observation:l.observation,repassage:l.repassage,revision:l.revision,maj_le:l.maj_le,maj_par:l.maj_par}),JSON.stringify({statut:o.statut,observation:o.observation,repassage:o.repassage,cree_le:o.cree_le,revision_connue:o.revision_connue}),'ouvert']);continue;}
+      if(li.res!=='ok')continue;
+      if(o.type==='intervention'){modifierLogement(o.id_logement,{statut:o.statut,observation:o.observation||'',repassage:o.repassage||''},m.appareil,'téléphone');
+        run('INSERT INTO interventions VALUES(?,?,?,?,?,?,?,?)',[o.id_intervention||o.id_operation,o.id_logement,o.statut,o.observation||'',o.repassage||'',o.cree_le,m.appareil,o.id_operation]);}
+      else if(o.type==='photo'){const b=pr.contenu[o.fichier];const fich=o.id_operation+'.jpg';photos.push([fich,b]);run('INSERT INTO photos VALUES(?,?,?,?,?,?,?)',[o.id_photo||o.id_operation,o.id_logement,o.id_operation,fich,await EO.sha(b),b.byteLength,o.cree_le]);}
+      else if(o.type==='compte_rendu'){run('INSERT INTO comptes_rendus VALUES(?,?,?,?,?,?)',[o.id_operation,o.id_chantier,o.texte||'',o.cree_le,m.appareil,o.id_operation]);}}
+    run("UPDATE paquets SET etat='intégré',integre_le=? WHERE id_paquet=?",[t,m.id_paquet]);
+    journal('paquet intégré',m.id_paquet+' – sauvegarde préalable '+svg);run('COMMIT');
+  }catch(x){run('ROLLBACK');journal('intégration annulée',m.id_paquet+' : '+x.message);await enregistrer();throw x;}
+  const dp=await dBase.getDirectoryHandle('photos',{create:true});for(const [n,b] of photos)await ecrire(dp,n,b);
+  await accuse(m.id_paquet,'integre',pr.ops.map(li=>etatOp(li.o.id_operation)).filter(Boolean));
+  await enregistrer();await deplacer(pr.nom);pr.etat='integre';}
+async function resoudre(idConflit,choix){const c=q('SELECT * FROM conflits WHERE id=?',[idConflit])[0],o=q('SELECT * FROM operations_recues WHERE id_operation=?',[c.id_operation])[0],op=JSON.parse(o.contenu),t=EO.now();
+  await sauvegarde();run('BEGIN');try{
+    if(choix==='mobile'){const ap=un('SELECT appareil FROM paquets WHERE id_paquet=?',[o.id_paquet]);modifierLogement(op.id_logement,{statut:op.statut,observation:op.observation||'',repassage:op.repassage||''},ap,'téléphone (conflit tranché)');
+      run('INSERT INTO interventions VALUES(?,?,?,?,?,?,?,?)',[op.id_intervention||op.id_operation,op.id_logement,op.statut,op.observation||'',op.repassage||'',op.cree_le,ap,op.id_operation]);
+      run("UPDATE operations_recues SET etat='integree',motif='conflit tranché : valeur du téléphone retenue',integre_le=? WHERE id_operation=?",[t,c.id_operation]);}
+    else run("UPDATE operations_recues SET etat='rejetee',motif='conflit tranché : valeur du PC conservée' WHERE id_operation=?",[c.id_operation]);
+    run("UPDATE conflits SET etat='résolu',decision=?,decide_le=? WHERE id=?",[choix,t,idConflit]);journal('conflit tranché',c.id_operation+' : '+choix);run('COMMIT');
+  }catch(x){run('ROLLBACK');throw x;}
+  await accuse(o.id_paquet,'integre',[etatOp(c.id_operation)]);await enregistrer();}
+// ---------- interface
+const ONG=[['chantiers','Chantiers'],['recevoir','Recevoir du téléphone'],['conflits','Conflits'],['echanges','Échanges'],['journal','Journal']];
+function dessiner(){
+  $('nav').innerHTML=db?ONG.map(o=>`<button class="${onglet===o[0]?'on':''}" data-o="${o[0]}">${o[1]}${o[0]==='conflits'&&db?' ('+un("SELECT COUNT(*) FROM conflits WHERE etat='ouvert'")+')':''}</button>`).join(''):'';
+  $('nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{onglet=b.dataset.o;msg('');dessiner();});
+  const v=$('vue');
+  if(!db){v.innerHTML=`<h2>Démarrage</h2><p class="s">Deux dossiers sont nécessaires. Ils sont mémorisés : vous ne les choisissez qu'une fois.</p>
+    <div class="carte"><b>1. Dossier de la base</b> – un dossier du disque local, <b>hors de OneDrive</b> (exemple : C:\\EOPUR_OS).<br><button class="a" id="cb">Choisir le dossier de la base</button> <span id="nb"></span></div>
+    <div class="carte"><b>2. Dossier d'échange OneDrive</b> – un dossier de « OneDrive - GROUPE ISERBA » (exemple : EOPUR_OS). Les sous-dossiers vers_telephone, vers_pc et traites y seront créés.<br><button class="a" id="co">Choisir le dossier OneDrive</button> <span id="no"></span></div>
+    <button class="a" id="go" disabled>Ouvrir EOPUR OS</button> <button class="a g" id="rep" style="display:none">Reprendre avec les dossiers mémorisés</button>`;
+    let hb=null,ho=null;const maj=()=>{$('nb').textContent=hb?'✔ '+hb.name:'';$('no').textContent=ho?'✔ '+ho.name:'';$('go').disabled=!(hb&&ho);};
+    $('cb').onclick=async()=>{try{hb=await showDirectoryPicker({mode:'readwrite',id:'eo-base'});maj();}catch(e){}};
+    $('co').onclick=async()=>{try{ho=await showDirectoryPicker({mode:'readwrite',id:'eo-od'});maj();}catch(e){}};
+    $('go').onclick=async()=>{try{await memo('base',hb);await memo('od',ho);await ouvrir(hb,ho);}catch(e){msg('Ouverture impossible : '+e.message,'ko');}};
+    (async()=>{try{const b=await memo('base'),o=await memo('od');if(b&&o){$('rep').style.display='';$('rep').textContent='Reprendre avec « '+b.name+' » et « '+o.name+' »';
+      $('rep').onclick=async()=>{try{for(const h of [b,o])if(await h.requestPermission({mode:'readwrite'})!=='granted')throw new Error('autorisation refusée pour '+h.name);await ouvrir(b,o);}catch(e){msg('Reprise impossible : '+e.message,'ko');}};}}catch(e){}})();
+    return;}
+  if(onglet==='chantiers'){const cs=q('SELECT c.*,(SELECT COUNT(*) FROM logements l WHERE l.id_chantier=c.id) n,(SELECT COUNT(*) FROM logements l WHERE l.id_chantier=c.id AND l.statut=\'Fait\') f FROM chantiers c ORDER BY cree_le');
+    if(!chantierSel&&cs.length)chantierSel=cs[0].id;
+    let h=`<h2>Chantiers</h2><div class="carte"><input id="cn" placeholder="Nom du chantier (fictif)" size="34"> <input id="cbail" placeholder="Bailleur" size="18"> <button class="a" id="cc">Créer le chantier</button></div>`;
+    if(cs.length){h+=`<p>Chantier : <select id="cs">${cs.map(c=>`<option value="${c.id}" ${c.id===chantierSel?'selected':''}>${esc(c.nom)} – ${c.f}/${c.n} faits</option>`).join('')}</select>
+      <button class="a" id="prep">Préparer pour le téléphone</button></p>
+      <div class="carte"><b>Ajouter des logements</b> : adresse <input id="la" size="22" placeholder="1 rue de l'Essai"> niveaux <input id="le" type="number" value="3" min="1" max="20" style="width:60px"> par niveau <input id="lp" type="number" value="2" min="1" max="20" style="width:60px"> <button class="a g" id="lj">Ajouter</button></div>`;
+      const lg=q('SELECT * FROM logements WHERE id_chantier=? ORDER BY adresse,CAST(numero AS INTEGER)',[chantierSel]);
+      h+=`<table><tr><th>Adresse</th><th>Étage</th><th>N°</th><th>Typo</th><th>Statut</th><th>Observation</th><th>Repassage</th><th>Passage prévu</th><th>Rév.</th><th>Modifié</th><th></th></tr>`+lg.map(l=>`<tr><td>${esc(l.adresse)}</td><td>${esc(l.etage)}</td><td>${esc(l.numero)}</td><td>${esc(l.typo)}</td>
+        <td><select data-s="${l.id}"><option></option>${EO.STATUTS.map(s=>`<option ${s===l.statut?'selected':''}>${s}</option>`).join('')}</select></td>
+        <td><input data-o="${l.id}" value="${esc(l.observation)}" size="22"></td><td><input type="date" data-r="${l.id}" value="${esc(l.repassage)}"></td><td><input type="date" data-p="${l.id}" value="${esc(l.passage_prevu)}"></td>
+        <td>${l.revision}</td><td>${EO.dateFr(l.maj_le)}<br><small>${esc(l.maj_par||'')}</small></td><td><button class="a g" data-e="${l.id}">Enregistrer</button></td></tr>`).join('')+`</table>`;
+      const crs=q('SELECT * FROM comptes_rendus WHERE id_chantier=? ORDER BY cree_le DESC',[chantierSel]);if(crs.length)h+=`<h2>Comptes rendus reçus</h2>`+crs.map(c=>`<div class="carte"><small>${EO.dateFr(c.cree_le)} – ${esc(c.appareil)}</small><br>${esc(c.texte)}</div>`).join('');
+      const nph=un('SELECT COUNT(*) FROM photos p JOIN logements l ON l.id=p.id_logement WHERE l.id_chantier=?',[chantierSel]);h+=`<p class="s">${nph} photographie(s) reçue(s) pour ce chantier, enregistrée(s) dans le dossier « photos » de la base.</p>`;}
+    v.innerHTML=h;
+    $('cc').onclick=async()=>{const n=$('cn').value.trim();if(!n)return;chantierSel=creerChantier(n,$('cbail').value.trim());await enregistrer();dessiner();};
+    if(cs.length){$('cs').onchange=e=>{chantierSel=e.target.value;dessiner();};
+      $('lj').onclick=async()=>{const a=$('la').value.trim();if(!a)return;const pm=un('SELECT COALESCE(MAX(CAST(numero AS INTEGER)),0) FROM logements WHERE id_chantier=?',[chantierSel]);ajouterLogements(chantierSel,a,+$('le').value,+$('lp').value,pm+1);await enregistrer();dessiner();};
+      $('prep').onclick=async()=>{try{const p=await preparer(chantierSel);msg('Paquet déposé dans OneDrive, dossier vers_telephone : '+p.nom+'. Sur l\'iPhone : « Recevoir ».');}catch(e){msg('Dépôt impossible : '+e.message,'ko');}};
+      v.querySelectorAll('[data-e]').forEach(b=>b.onclick=async()=>{const id=b.dataset.e,g=a=>v.querySelector(`[data-${a}="${id}"]`).value;modifierLogement(id,{statut:g('s'),observation:g('o'),repassage:g('r'),passage_prevu:g('p')},APP(),'saisie PC');journal('logement modifié sur le PC',id);await enregistrer();msg('Logement enregistré.');dessiner();});}
+    return;}
+  if(onglet==='recevoir'){let h=`<h2>Recevoir du téléphone</h2><p class="s">Lit le dossier OneDrive « vers_pc ». Rien n'entre dans la base sans votre clic sur « Intégrer ».</p><button class="a" id="an">Lire les paquets reçus</button>`;
+    for(const [i,pr] of propositions.entries()){h+=`<div class="carte"><b>${esc(pr.nom)}</b> `;
+      if(pr.etat==='attente')h+=`<span class="att">en attente</span> – ${esc(pr.erreur)}`;else if(pr.etat==='doublon'||pr.etat==='ignore')h+=`<span class="att">ignoré</span> – ${esc(pr.erreur)}`;else if(pr.etat==='integre')h+=`<span class="ok">intégré</span>`;
+      else{const n=k=>pr.ops.filter(o=>o.res===k).length;h+=`– appareil ${esc(pr.m.appareil.slice(0,8))} – créé ${EO.dateFr(pr.m.cree_le)} – empreinte ${pr.empreinte.slice(0,16)}<br>
+        <span class="ok">${n('ok')} à intégrer</span> · <span class="ko">${n('conflit')} en conflit</span> · ${n('doublon')} déjà reçue(s) · ${n('rejet')} rejetée(s)
+        <table><tr><th>Type</th><th>Logement</th><th>Valeur</th><th>Créée le</th><th>Résultat</th></tr>`+pr.ops.map(li=>`<tr><td>${esc(li.o.type)}</td><td>${li.l?esc(li.l.adresse+' – n° '+li.l.numero):''}</td>
+          <td>${esc(li.o.type==='intervention'?[li.o.statut,li.o.observation,li.o.repassage&&'repassage '+li.o.repassage].filter(Boolean).join(' · '):li.o.type==='photo'?'photographie':(li.o.texte||'').slice(0,80))}</td><td>${EO.dateFr(li.o.cree_le)}</td>
+          <td class="${li.res==='ok'?'ok':li.res==='conflit'?'ko':'att'}">${li.res==='ok'?'à intégrer':li.res}${li.motif?' – '+esc(li.motif):''}</td></tr>`).join('')+`</table><button class="a" data-i="${i}">Intégrer ce paquet</button>`;}
+      h+=`</div>`;}
+    v.innerHTML=h;$('an').onclick=async()=>{try{msg('Lecture en cours…','att');await analyser();msg(propositions.length?'':'Aucun paquet dans vers_pc.','att');dessiner();}catch(e){msg('Lecture impossible : '+e.message,'ko');}};
+    v.querySelectorAll('[data-i]').forEach(b=>b.onclick=async()=>{try{b.disabled=true;await integrer(propositions[+b.dataset.i]);msg('Paquet intégré. Accusé déposé dans vers_telephone.');dessiner();}catch(e){msg('Intégration annulée, rien n\'a été modifié : '+e.message,'ko');dessiner();}});
+    return;}
+  if(onglet==='conflits'){const cf=q("SELECT c.*,l.adresse,l.etage,l.numero FROM conflits c LEFT JOIN logements l ON l.id=c.id_logement ORDER BY c.etat,c.id DESC");
+    v.innerHTML=`<h2>Conflits</h2><p class="s">Un conflit apparaît quand le même logement a été modifié sur le PC et sur le téléphone. Les deux valeurs sont conservées jusqu'à votre décision.</p>`+(cf.length?cf.map(c=>{const a=JSON.parse(c.valeur_pc),b=JSON.parse(c.valeur_mobile);const li=o=>`Statut : <b>${esc(o.statut||'(vide)')}</b><br>Observation : ${esc(o.observation||'')}<br>Repassage : ${esc(o.repassage||'')}`;
+      return `<div class="carte ${c.etat==='ouvert'?'conf':''}"><b>${esc((c.adresse||'')+' – '+(c.etage||'')+' – n° '+(c.numero||''))}</b> – ${c.etat==='ouvert'?'<span class="ko">à trancher</span>':'<span class="ok">tranché : '+(c.decision==='mobile'?'téléphone':'PC')+'</span> le '+EO.dateFr(c.decide_le)}
+      <div class="deux"><div><b>Sur le PC</b> (révision ${a.revision}, ${EO.dateFr(a.maj_le)})<br>${li(a)}</div><div><b>Sur le téléphone</b> (saisi ${EO.dateFr(b.cree_le)}, à partir de la révision ${b.revision_connue})<br>${li(b)}</div></div>
+      ${c.etat==='ouvert'?`<button class="a g" data-c="${c.id}" data-x="pc">Garder la valeur du PC</button><button class="a" data-c="${c.id}" data-x="mobile">Prendre la valeur du téléphone</button>`:''}</div>`;}).join(''):'<p>Aucun conflit.</p>');
+    v.querySelectorAll('[data-c]').forEach(b=>b.onclick=async()=>{try{await resoudre(+b.dataset.c,b.dataset.x);msg('Conflit tranché. Accusé déposé pour le téléphone.');dessiner();}catch(e){msg('Échec : '+e.message,'ko');}});return;}
+  if(onglet==='echanges'){v.innerHTML=`<h2>Échanges avec le téléphone</h2><table><tr><th>Paquet</th><th>Type</th><th>Sens</th><th>Appareil</th><th>Créé</th><th>Reçu</th><th>Intégré</th><th>État</th></tr>`+q('SELECT * FROM paquets ORDER BY COALESCE(recu_le,cree_le) DESC').map(p=>`<tr><td>${p.id_paquet.slice(0,8)}</td><td>${p.type}</td><td>${p.sens}</td><td>${esc((p.appareil||'').slice(0,11))}</td><td>${EO.dateFr(p.cree_le)}</td><td>${EO.dateFr(p.recu_le)}</td><td>${EO.dateFr(p.integre_le)}</td><td>${esc(p.etat)}</td></tr>`).join('')+`</table>
+    <h2>Opérations reçues</h2><table><tr><th>Opération</th><th>Type</th><th>État</th><th>Motif</th><th>Créée</th><th>Reçue</th><th>Intégrée</th></tr>`+q('SELECT * FROM operations_recues ORDER BY recu_le DESC,cree_le').map(o=>`<tr><td>${o.id_operation.slice(0,8)}</td><td>${o.type}</td><td class="${o.etat==='integree'?'ok':o.etat==='conflit'?'ko':'att'}">${o.etat}</td><td>${esc(o.motif)}</td><td>${EO.dateFr(o.cree_le)}</td><td>${EO.dateFr(o.recu_le)}</td><td>${EO.dateFr(o.integre_le)}</td></tr>`).join('')+`</table>`;return;}
+  if(onglet==='journal'){v.innerHTML=`<h2>Journal</h2><button class="a g" id="cj">Copier le journal</button><div id="jr">${q('SELECT * FROM journal ORDER BY id DESC LIMIT 400').map(j=>esc(EO.dateFr(j.quand)+'  '+j.evenement+(j.detail?' : '+j.detail:''))).join('\n')}</div>`;
+    $('cj').onclick=async()=>{try{await navigator.clipboard.writeText($('jr').textContent);msg('Journal copié.');}catch(e){msg('Copie impossible : sélectionner le texte.','att');}};}
+}
+(async()=>{if(!('showDirectoryPicker' in window)){$('vue').innerHTML='<p class="ko">Ce navigateur ne sait pas accéder aux dossiers. Ouvrir cette page dans Chrome ou Edge sur le PC.</p>';return;}
+  try{SQL=await initSqlJs({locateFile:f=>f});}catch(e){$('vue').innerHTML='<p class="ko">SQLite indisponible : '+esc(e.message)+'</p>';return;}dessiner();})();
+window.__pc={ouvrir,creerChantier,ajouterLogements,modifierLogement,preparer,analyser,integrer,resoudre,q,un,enregistrer,dossiers:()=>({dVT,dVP,dTR,dBase}),props:()=>propositions};
+</script></body></html>

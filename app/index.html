@@ -1,0 +1,149 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>EOPUR OS</title>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icone-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#1F3864">
+<style>
+:root{--b:#1F3864;--g:#e9ecf2}
+*{box-sizing:border-box}body{font:16px -apple-system,Segoe UI,Arial,sans-serif;margin:0;color:#1a1a1a;background:#fff;padding-bottom:calc(70px + env(safe-area-inset-bottom))}
+header{background:var(--b);color:#fff;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top));position:sticky;top:0;z-index:5}
+header h1{font-size:18px;margin:0}header div{font-size:13px;opacity:.9;margin-top:2px}
+main{padding:12px max(16px,env(safe-area-inset-left)) 12px max(16px,env(safe-area-inset-right));max-width:680px;margin:auto}
+h2{font-size:16px;color:var(--b);margin:18px 0 8px}p.s{font-size:13px;color:#555;margin:4px 0 10px}
+button.a,label.a{display:block;width:100%;padding:14px;margin:8px 0;font-size:16px;border:0;border-radius:8px;background:var(--b);color:#fff;text-align:center}
+button.a.g,label.a.g{background:var(--g);color:var(--b)}button.a:disabled{opacity:.4}
+.st{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.st button{padding:12px 4px;border:2px solid var(--b);border-radius:8px;background:#fff;color:var(--b);font-size:15px}.st button.on{background:var(--b);color:#fff}
+input[type=text],input[type=date],textarea{width:100%;padding:12px;font-size:16px;border:1px solid #999;border-radius:8px;font-family:inherit}input[type=file]{display:none}
+.li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:12px 4px;border-bottom:1px solid #ddd}.li small{color:#555;display:block}
+.b{font-size:12px;padding:3px 8px;border-radius:10px;white-space:nowrap;background:#eee;color:#333}.b.v{background:#C6EFCE;color:#17691f}.b.o{background:#FFE0B2;color:#8a5a00}.b.r{background:#FFC7CE;color:#b00020}.b.bl{background:#DDEBF7;color:#1F3864}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #ccc;display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:5}
+nav button{flex:1;border:0;background:none;padding:12px 2px;font-size:12px;color:#555}nav button.on{color:var(--b);font-weight:700}
+#msg{padding:10px 16px;font-weight:600;display:none}#av{padding:8px 16px;font-size:13px;font-weight:600;display:none;background:#FFE0B2;color:#8a5a00}
+img.v{width:64px;height:64px;object-fit:cover;border-radius:6px;margin:4px 4px 0 0}#jr{font:12px ui-monospace,Menlo,monospace;white-space:pre-wrap;background:#f4f4f4;padding:10px;border-radius:8px}
+</style></head><body>
+<header><h1 id="titre">EOPUR OS</h1><div id="sous"></div></header><div id="av"></div><div id="msg"></div>
+<main id="vue"></main><nav id="nav"></nav><input type="file" id="recv"><input type="file" id="ph" accept="image/*" multiple>
+<script src="jszip.min.js"></script><script src="commun.js"></script>
+<script>
+const $=id=>document.getElementById(id),esc=EO.esc;
+const INST=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+let db,ecran='accueil',chSel=null,lgSel=null,brouillon=null,APP='';
+function msg(t,c){const m=$('msg');m.textContent=t||'';m.style.display=t?'block':'none';m.style.background=c==='ko'?'#FFC7CE':c==='att'?'#FFEB9C':'#C6EFCE';if(t)scrollTo(0,0);}
+// ---------- stockage local
+function odb(){return new Promise((ok,ko)=>{const r=indexedDB.open('eopur-os',1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('kv',{keyPath:'k'});d.createObjectStore('chantiers',{keyPath:'id'});d.createObjectStore('logements',{keyPath:'id'});d.createObjectStore('ops',{keyPath:'id'});d.createObjectStore('paquets',{keyPath:'id'});d.createObjectStore('journal',{autoIncrement:true});};r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});}
+const rq=r=>new Promise((ok,ko)=>{r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});
+const S=(n,m)=>db.transaction(n,m||'readonly').objectStore(n);
+const tous=n=>rq(S(n).getAll()),lire=(n,k)=>rq(S(n).get(k)),mettre=(n,v)=>rq(S(n,'readwrite').put(v));
+async function kv(k,v){if(v===undefined){const x=await lire('kv',k);return x&&x.v;}await mettre('kv',{k,v});}
+async function journal(t){await rq(S('journal','readwrite').add({q:EO.now(),t:(INST?'[APP] ':'[SAFARI] ')+t}));}
+// états d'une opération
+const ET={local:['Enregistré localement','o'],attente:['En attente de transfert','o'],cours:['Transfert en cours','o'],transfere:['Transféré vers OneDrive','bl'],recu:['Reçu par le PC','bl'],integre:['Intégré à la base centrale','v'],conflit:['En conflit','r'],erreur:['En erreur','r']};
+const badge=e=>`<span class="b ${ET[e][1]}">${ET[e][0]}</span>`;
+const NONCONF=['local','attente','cours','transfere','recu'];
+async function nouvelleOp(o){o.id=EO.uuid();o.cree_le=EO.now();o.modif_le=o.cree_le;o.etat='local';o.tentatives=[];await mettre('ops',o);return o;}
+// ---------- réception d'un paquet (chantier ou accusé)
+async function recevoir(file){
+  const p=await EO.lire(await file.arrayBuffer());const deja=await lire('paquets',p.m.id_paquet);
+  if(deja&&deja.sens==='recu'){await journal('paquet déjà reçu, ignoré : '+p.m.id_paquet);return 'Ce paquet a déjà été reçu : rien à faire.';}
+  if(p.m.type==='chantier'){const c=p.json('chantier.json');await mettre('chantiers',{id:c.id_chantier,nom:c.nom,bailleur:c.bailleur,revision:c.revision,recu_le:EO.now(),id_paquet:p.m.id_paquet});
+    const anciens=(await tous('logements')).filter(l=>l.id_chantier===c.id_chantier),ids=new Set(c.logements.map(l=>l.id));
+    for(const l of c.logements){l.id_chantier=c.id_chantier;await mettre('logements',l);}
+    for(const a of anciens)if(!ids.has(a.id))await rq(S('logements','readwrite').delete(a.id));
+    await mettre('paquets',{id:p.m.id_paquet,sens:'recu',type:'chantier',q:EO.now()});await journal('chantier reçu : '+c.nom+' – '+c.logements.length+' logements – empreinte '+p.empreinte.slice(0,16));
+    return 'Chantier « '+c.nom+' » reçu : '+c.logements.length+' logements disponibles hors ligne.';}
+  if(p.m.type==='accuse'){const a=p.json('accuse.json');let n=0,inc=0;const pq=await lire('paquets',a.id_paquet_recu);
+    if(pq){pq.etat=a.stade==='integre'?'intégré par le PC':'reçu par le PC';pq.accuse_le=EO.now();await mettre('paquets',pq);}
+    for(const l of a.operations){const o=await lire('ops',l.id_operation);if(!o){inc++;continue;}
+      const av=o.etat;if(l.resultat==='recu'){if(['local','attente','cours','transfere'].includes(o.etat))o.etat='recu';}
+      else if(l.resultat==='integree'){o.etat='integre';o.integre_le=EO.now();if(o.id_logement&&l.revision_nouvelle){const lg=await lire('logements',o.id_logement);if(lg){lg.revision=Math.max(lg.revision||0,l.revision_nouvelle);if(o.type==='intervention'){lg.statut=o.statut;lg.observation=o.observation;lg.repassage=o.repassage;}await mettre('logements',lg);}}}
+      else if(l.resultat==='conflit'){o.etat='conflit';o.motif=l.motif;}else if(l.resultat==='rejetee'){o.etat='erreur';o.motif=l.motif;}
+      if(o.etat!==av){o.modif_etat_le=EO.now();await mettre('ops',o);n++;}}
+    await mettre('paquets',{id:p.m.id_paquet,sens:'recu',type:'accuse',q:EO.now()});await journal('accusé reçu ('+a.stade+') pour le paquet '+a.id_paquet_recu.slice(0,8)+' : '+n+' opération(s) mise(s) à jour'+(inc?', '+inc+' inconnue(s) de ce téléphone':''));
+    return 'Accusé du PC lu : '+n+' saisie(s) mise(s) à jour.'+(pq?'':' (Paquet d\'origine inconnu de ce téléphone.)');}
+  throw new Error('ce paquet n\'est pas destiné au téléphone (type « '+p.m.type+' »)');}
+// ---------- fabrication d'un paquet avec tout ce qui n'est pas confirmé
+async function fabriquer(){
+  const ops=(await tous('ops')).filter(o=>['local','attente','cours','transfere'].includes(o.etat)).sort((a,b)=>a.cree_le<b.cree_le?-1:1);if(!ops.length)throw new Error('rien à envoyer : tout est déjà reçu ou confirmé par le PC');
+  const fich=[],lignes=[];
+  for(const o of ops){const l={id_operation:o.id,type:o.type,id_chantier:o.id_chantier,id_logement:o.id_logement,revision_connue:o.revision_connue,cree_le:o.cree_le,modif_le:o.modif_le};
+    if(o.type==='intervention')Object.assign(l,{statut:o.statut,observation:o.observation,repassage:o.repassage,id_intervention:o.id});
+    if(o.type==='compte_rendu')l.texte=o.texte;
+    if(o.type==='photo'){l.fichier='photos/'+o.id+'.jpg';l.id_photo=o.id;fich.push({nom:l.fichier,data:await o.photo.arrayBuffer()});}
+    lignes.push(l);}
+  fich.push({nom:'operations.json',data:JSON.stringify(lignes,null,1)});
+  const p=await EO.fabriquer('operations',APP,fich);
+  for(const o of ops){o.etat='attente';o.id_paquet=p.id;o.tentatives.push({paquet:p.id,q:EO.now()});await mettre('ops',o);}
+  await mettre('paquets',{id:p.id,sens:'emis',type:'operations',q:EO.now(),n:ops.length,taille:p.blob.size,empreinte:p.empreinte,etat:'en attente de transfert'});
+  await journal('paquet fabriqué '+p.id+' : '+ops.length+' opération(s), '+p.blob.size+' octets, empreinte '+p.empreinte.slice(0,16));return p;}
+async function marquer(idPaquet,etatOp,etatPq){for(const o of await tous('ops'))if(o.id_paquet===idPaquet&&['attente','cours','transfere'].includes(o.etat)){o.etat=etatOp;await mettre('ops',o);}const pq=await lire('paquets',idPaquet);if(pq){pq.etat=etatPq;await mettre('paquets',pq);}}
+async function envoyer(){let p;try{p=await fabriquer();}catch(e){msg(e.message,'att');return;}
+  const file=new File([p.blob],p.nom,{type:'application/zip'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){await marquer(p.id,'cours','transfert en cours');dessiner();
+    try{await navigator.share({files:[file],title:p.nom});await marquer(p.id,'transfere','transféré vers OneDrive (à confirmer par le PC)');await journal('partage terminé pour '+p.id+' (non confirmé)');msg('Paquet remis à OneDrive. Il ne sera confirmé qu\'à la lecture de l\'accusé du PC.');}
+    catch(x){await marquer(p.id,'attente','en attente de transfert');await journal('partage annulé ou refusé pour '+p.id+' : '+x.name);msg('Envoi annulé : les saisies restent en attente sur le téléphone.','att');}}
+  else{await journal('partage indisponible : lien d\'enregistrement proposé pour '+p.id);const a=document.createElement('a');a.href=URL.createObjectURL(p.blob);a.download=p.nom;a.textContent='Partage indisponible sur cet appareil : toucher ici pour enregistrer le paquet '+p.nom;a.className='a g';a.style.textDecoration='none';msg('');$('vue').prepend(a);}
+  dessiner();}
+function reduire(file){return new Promise((ok,ko)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{const k=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);c.toBlob(b=>{URL.revokeObjectURL(u);b?ok(b):ko(new Error('conversion impossible'));},'image/jpeg',0.8);};im.onerror=()=>ko(new Error('image illisible'));im.src=u;});}
+// ---------- affichage
+async function vueLogement(l,ops){const mes=ops.filter(o=>o.id_logement===l.id).sort((a,b)=>a.cree_le<b.cree_le?1:-1);const derniere=mes.find(o=>o.type==='intervention'&&o.etat!=='erreur');
+  const aff=derniere&&derniere.etat!=='integre'?derniere:null;return {statut:aff?aff.statut:l.statut,observation:aff?aff.observation:l.observation,repassage:aff?aff.repassage:l.repassage,etat:mes.length?(mes.find(o=>o.etat==='conflit')||mes.find(o=>o.etat==='erreur')||mes.find(o=>NONCONF.includes(o.etat))||mes[0]).etat:null,mes};}
+async function dessiner(){
+  const ops=await tous('ops'),nc=ops.filter(o=>NONCONF.includes(o.etat)).length,pb=ops.filter(o=>o.etat==='conflit'||o.etat==='erreur').length;
+  $('sous').textContent=(navigator.onLine?'En ligne':'HORS LIGNE')+' · '+nc+' saisie(s) non confirmée(s)'+(pb?' · '+pb+' à voir':'');
+  $('av').style.display=INST?'none':'block';$('av').textContent='Ouverte dans Safari : pour travailler hors ligne, installer l\'application sur l\'écran d\'accueil et l\'ouvrir depuis l\'icône.';
+  $('nav').innerHTML=[['accueil','Accueil'],['chantiers','Chantiers'],['planning','Planning'],['sync','Synchro'],['journal','Journal']].map(n=>`<button class="${ecran===n[0]||(n[0]==='chantiers'&&['logements','fiche','cr'].includes(ecran))?'on':''}" data-n="${n[0]}">${n[1]}</button>`).join('');
+  $('nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{ecran=b.dataset.n;msg('');dessiner();});
+  const v=$('vue'),chs=await tous('chantiers'),lgs=await tous('logements');
+  if(ecran==='accueil'){const pers=await (navigator.storage&&navigator.storage.persisted?navigator.storage.persisted():false);
+    v.innerHTML=`<h2>Synchronisation</h2><p class="s">Deux gestes : toucher le bouton, puis choisir OneDrive. Rien n'est confirmé avant l'accusé du PC.</p>
+    <label class="a" for="recv">Recevoir (chantier ou accusé du PC)</label><p class="s">Dans OneDrive : dossier <b>vers_telephone</b>.</p>
+    <button class="a" id="env" ${nc?'':'disabled'}>Envoyer ${ops.filter(o=>['local','attente','cours','transfere'].includes(o.etat)).length} saisie(s) au PC</button><p class="s">Dans OneDrive : dossier <b>vers_pc</b>.</p>
+    <h2>État</h2><div class="li"><span>Chantiers sur ce téléphone</span><b>${chs.length}</b></div><div class="li"><span>Logements</span><b>${lgs.length}</b></div>
+    ${Object.keys(ET).map(e=>`<div class="li"><span>${ET[e][0]}</span><b>${ops.filter(o=>o.etat===e).length}</b></div>`).join('')}
+    <div class="li"><span>Stockage protégé par l'iPhone</span><b>${pers?'oui':'non'}</b></div><div class="li"><span>Appareil</span><b>${APP.slice(0,11)}</b></div><div class="li"><span>Version</span><b>${EO.VERSION_APP}</b></div>`;
+    $('env').onclick=envoyer;return;}
+  if(ecran==='chantiers'){v.innerHTML=`<h2>Chantiers</h2>`+(chs.length?chs.map(c=>{const l=lgs.filter(x=>x.id_chantier===c.id);return `<div class="li" data-c="${c.id}"><span><b>${esc(c.nom)}</b><small>${esc(c.bailleur||'')} · ${l.length} logements · reçu ${EO.dateFr(c.recu_le)}</small></span><span>›</span></div>`;}).join(''):'<p>Aucun chantier. Toucher « Recevoir » sur l\'accueil.</p>');
+    v.querySelectorAll('[data-c]').forEach(d=>d.onclick=()=>{chSel=d.dataset.c;ecran='logements';dessiner();});return;}
+  if(ecran==='logements'){const c=chs.find(x=>x.id===chSel);if(!c){ecran='chantiers';return dessiner();}const l=lgs.filter(x=>x.id_chantier===chSel).sort((a,b)=>a.adresse===b.adresse?(+a.numero)-(+b.numero):a.adresse<b.adresse?-1:1);let h=`<h2>${esc(c.nom)}</h2><button class="a g" id="cr">Rédiger un compte rendu de visite</button>`,ad='';
+    for(const x of l){const w=await vueLogement(x,ops);if(x.adresse!==ad){ad=x.adresse;h+=`<h2>${esc(ad)}</h2>`;}
+      h+=`<div class="li" data-l="${x.id}"><span><b>N° ${esc(x.numero)}</b> · ${esc(x.etage)} · T${esc(x.typo)}<small>${esc(w.statut||'à faire')}${w.repassage?' · repassage '+esc(w.repassage):''}${w.observation?' · '+esc(w.observation):''}</small></span>${w.etat?badge(w.etat):''}</div>`;}
+    v.innerHTML=h;v.querySelectorAll('[data-l]').forEach(d=>d.onclick=()=>{lgSel=d.dataset.l;brouillon=null;ecran='fiche';dessiner();});$('cr').onclick=()=>{ecran='cr';dessiner();};return;}
+  if(ecran==='fiche'){const x=lgs.find(l=>l.id===lgSel);if(!x){ecran='logements';return dessiner();}const w=await vueLogement(x,ops);if(!brouillon)brouillon={statut:w.statut||'',observation:w.observation||'',repassage:w.repassage||''};
+    v.innerHTML=`<button class="a g" id="ret">‹ Retour aux logements</button><h2>${esc(x.adresse)} · N° ${esc(x.numero)} · ${esc(x.etage)}</h2>
+    <p class="s">Typologie T${esc(x.typo)}${x.passage_prevu?' · passage prévu le '+esc(x.passage_prevu):''} · révision ${x.revision}</p>
+    <h2>Résultat de l'intervention</h2><div class="st">${EO.STATUTS.map(s=>`<button data-s="${s}" class="${brouillon.statut===s?'on':''}">${s}</button>`).join('')}</div>
+    <h2>Observation</h2><textarea id="obs" rows="3">${esc(brouillon.observation)}</textarea><h2>Repassage</h2><input type="date" id="rep" value="${esc(brouillon.repassage)}">
+    <button class="a" id="enr">Enregistrer</button><label class="a g" for="ph">Ajouter des photos</label>
+    <div>${w.mes.filter(o=>o.type==='photo').map(o=>`<img class="v" src="${URL.createObjectURL(o.photo)}">`).join('')}</div>
+    <h2>Historique sur ce téléphone</h2>${w.mes.length?w.mes.map(o=>`<div class="li"><span>${o.type==='photo'?'Photo '+Math.round(o.photo.size/1024)+' ko':esc([o.statut,o.observation,o.repassage&&'repassage '+o.repassage].filter(Boolean).join(' · '))}<small>${EO.dateFr(o.cree_le)}${o.motif?' · '+esc(o.motif):''}</small></span>${badge(o.etat)}</div>`).join(''):'<p class="s">Aucune saisie.</p>'}`;
+    const garde=()=>{brouillon.observation=$('obs').value;brouillon.repassage=$('rep').value;};
+    v.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{garde();brouillon.statut=brouillon.statut===b.dataset.s?'':b.dataset.s;dessiner();});
+    $('ret').onclick=()=>{ecran='logements';dessiner();};
+    $('enr').onclick=async()=>{garde();if(!brouillon.statut&&!brouillon.observation&&!brouillon.repassage){msg('Rien à enregistrer.','att');return;}
+      await nouvelleOp({type:'intervention',id_chantier:x.id_chantier,id_logement:x.id,revision_connue:x.revision,statut:brouillon.statut,observation:brouillon.observation.trim(),repassage:brouillon.repassage});
+      await journal('intervention enregistrée : n° '+x.numero+' '+brouillon.statut+' – '+(await tous('ops')).length+' saisie(s) en base');brouillon=null;msg('Enregistré sur le téléphone.');dessiner();};
+    $('ph').onchange=async e=>{garde();for(const f of e.target.files){try{const b=await reduire(f);await nouvelleOp({type:'photo',id_chantier:x.id_chantier,id_logement:x.id,revision_connue:x.revision,photo:b});await journal('photo enregistrée : n° '+x.numero+' '+Math.round(f.size/1024)+' ko → '+Math.round(b.size/1024)+' ko');}catch(er){await journal('photo refusée : '+er.message);msg('Photo non enregistrée : '+er.message,'ko');}}e.target.value='';dessiner();};return;}
+  if(ecran==='cr'){const c=chs.find(x=>x.id===chSel);v.innerHTML=`<button class="a g" id="ret">‹ Retour</button><h2>Compte rendu de visite – ${esc(c?c.nom:'')}</h2><textarea id="t" rows="8" placeholder="Compte rendu…"></textarea><button class="a" id="enr">Enregistrer le compte rendu</button>
+    ${ops.filter(o=>o.type==='compte_rendu'&&o.id_chantier===chSel).map(o=>`<div class="li"><span>${esc(o.texte)}<small>${EO.dateFr(o.cree_le)}</small></span>${badge(o.etat)}</div>`).join('')}`;
+    $('ret').onclick=()=>{ecran='logements';dessiner();};$('enr').onclick=async()=>{const t=$('t').value.trim();if(!t)return;await nouvelleOp({type:'compte_rendu',id_chantier:chSel,texte:t});await journal('compte rendu enregistré');msg('Compte rendu enregistré sur le téléphone.');dessiner();};return;}
+  if(ecran==='planning'){const li=[];for(const x of lgs){const w=await vueLogement(x,ops);const d=w.repassage||x.passage_prevu;if(d&&w.statut!=='Fait')li.push({d,x,w,t:w.repassage?'Repassage':'Passage prévu'});}li.sort((a,b)=>a.d<b.d?-1:1);
+    v.innerHTML=`<h2>Planning des passages</h2>`+(li.length?li.map(i=>`<div class="li" data-l="${i.x.id}" data-c="${i.x.id_chantier}"><span><b>${esc(i.d)}</b> · ${i.t}<small>${esc((chs.find(c=>c.id===i.x.id_chantier)||{}).nom||'')} · ${esc(i.x.adresse)} · N° ${esc(i.x.numero)} · ${esc(i.w.statut||'à faire')}</small></span><span>›</span></div>`).join(''):'<p>Aucun passage daté.</p>');
+    v.querySelectorAll('[data-l]').forEach(d=>d.onclick=()=>{chSel=d.dataset.c;lgSel=d.dataset.l;brouillon=null;ecran='fiche';dessiner();});return;}
+  if(ecran==='sync'){const pq=(await tous('paquets')).sort((a,b)=>a.q<b.q?1:-1),integ=ops.filter(o=>o.etat==='integre');
+    v.innerHTML=`<h2>Paquets</h2>`+(pq.length?pq.map(p=>`<div class="li"><span><b>${p.id.slice(0,8)}</b> · ${p.sens==='emis'?'envoyé':'reçu'} · ${p.type}<small>${EO.dateFr(p.q)}${p.n?' · '+p.n+' opération(s) · '+p.taille+' octets':''}${p.etat?' · '+esc(p.etat):''}</small></span></div>`).join(''):'<p class="s">Aucun paquet.</p>')+
+    `<h2>Saisies</h2>`+(ops.length?ops.sort((a,b)=>a.cree_le<b.cree_le?1:-1).map(o=>`<div class="li"><span>${o.type}${o.statut?' · '+esc(o.statut):''}<small>${EO.dateFr(o.cree_le)}${o.id_paquet?' · paquet '+o.id_paquet.slice(0,8):''}${o.motif?' · '+esc(o.motif):''}</small></span>${badge(o.etat)}</div>`).join(''):'<p class="s">Aucune saisie.</p>')+
+    `<h2>Libérer de la place</h2><p class="s">Supprime du téléphone uniquement les saisies déjà intégrées à la base du PC. Jamais automatique.</p><button class="a g" id="pur" ${integ.length?'':'disabled'}>Supprimer ${integ.length} saisie(s) intégrée(s)</button>`;
+    $('pur').onclick=async()=>{const b=$('pur');if(b.dataset.c!=='1'){b.dataset.c='1';b.textContent='Toucher encore pour confirmer';return;}let n=0;for(const o of await tous('ops'))if(o.etat==='integre'){await rq(S('ops','readwrite').delete(o.id));n++;}await journal('purge : '+n+' saisie(s) intégrée(s) supprimée(s)');msg(n+' saisie(s) supprimée(s) du téléphone.');dessiner();};return;}
+  if(ecran==='journal'){const j=await tous('journal');v.innerHTML=`<h2>Journal</h2><button class="a g" id="cj">Copier le journal</button><div id="jr">${j.slice(-300).reverse().map(x=>esc(x.q.slice(5,19).replace('T',' ')+' '+x.t)).join('\n')}</div>`;
+    $('cj').onclick=async()=>{try{await navigator.clipboard.writeText($('jr').textContent);msg('Journal copié.');}catch(e){msg('Copie impossible : sélectionner le texte.','att');}};}
+}
+$('recv').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{msg(await recevoir(f));}catch(x){await journal('réception refusée : '+x.message);msg('Paquet refusé : '+x.message,'ko');}e.target.value='';dessiner();};
+addEventListener('online',dessiner);addEventListener('offline',dessiner);
+(async()=>{db=await odb();APP=await kv('appareil');if(!APP){APP='TEL-'+EO.uuid().slice(0,8);await kv('appareil',APP);}
+  await kv('ouv',((await kv('ouv'))||0)+1);try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(e){}
+  // un transfert resté « en cours » après une fermeture n'a pas abouti : retour en attente
+  for(const o of await tous('ops'))if(o.etat==='cours'){o.etat='attente';await mettre('ops',o);}
+  if('serviceWorker' in navigator){try{await navigator.serviceWorker.register('sw.js');}catch(e){}}
+  await journal('ouverture n° '+await kv('ouv')+(navigator.onLine?' en ligne':' HORS LIGNE')+' – '+(await tous('ops')).length+' saisie(s) en base');dessiner();})();
+window.__m={recevoir,fabriquer,marquer,nouvelleOp,tous,lire,mettre,dessiner,app:()=>APP};
+</script></body></html>
