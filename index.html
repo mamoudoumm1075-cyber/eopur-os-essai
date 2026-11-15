@@ -1,0 +1,87 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>EOPUR OS – Essai</title>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icone-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#1F3864">
+<style>
+body{font:16px -apple-system,Segoe UI,Arial,sans-serif;margin:0;padding:16px;padding-top:max(16px,env(safe-area-inset-top));color:#1a1a1a;background:#fff;max-width:640px}
+h1{font-size:20px;color:#1F3864;margin:0 0 4px}h2{font-size:16px;margin:22px 0 8px;color:#1F3864}
+.s{font-size:13px;color:#555;margin:0 0 12px}table{border-collapse:collapse;width:100%}td{padding:6px 4px;border-bottom:1px solid #ddd;font-size:14px;vertical-align:top}
+td:last-child{text-align:right;font-weight:600}.ok{color:#17691f}.ko{color:#b00020}.att{color:#8a5a00}
+button,label.b{display:block;width:100%;box-sizing:border-box;padding:14px;margin:8px 0;font-size:16px;border:0;border-radius:8px;background:#1F3864;color:#fff;text-align:center}
+button.g{background:#e9ecf2;color:#1F3864}input[type=text]{width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:1px solid #999;border-radius:8px}
+input[type=file]{display:none}#j{font:12px ui-monospace,Menlo,monospace;white-space:pre-wrap;background:#f4f4f4;padding:10px;border-radius:8px;max-height:240px;overflow:auto}
+li{font-size:14px;margin:4px 0}img.v{width:56px;height:56px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:8px}
+</style></head><body>
+<h1>EOPUR OS – Page d'essai</h1><p class="s">Données fictives uniquement. Rien n'est envoyé par cette page : elle ne fait aucun appel réseau en dehors de son propre chargement.</p>
+<h2>B1 – Installation et hors ligne</h2><table id="etat"></table>
+<h2>B2 – Saisie conservée sur le téléphone</h2>
+<input type="text" id="note" placeholder="Observation d'essai (ex. logement 12, absent)">
+<button id="bNote">Enregistrer l'observation</button>
+<label class="b" for="photo">Prendre ou choisir une photo</label><input type="file" id="photo" accept="image/*">
+<ul id="liste"></ul>
+<h2>B3 – Envoyer vers OneDrive</h2><button id="bEnv">Envoyer (fabrique un paquet)</button><p class="s" id="env"></p>
+<h2>B4 – Recevoir depuis OneDrive</h2><label class="b" for="recv">Recevoir (choisir un paquet)</label><input type="file" id="recv"><p class="s" id="rec"></p>
+<h2>Journal</h2><div id="j"></div><button class="g" id="bCopie">Copier le journal</button><button class="g" id="bRaz">Tout effacer (essai seulement)</button>
+<script src="jszip.min.js"></script>
+<script>
+const $=id=>document.getElementById(id), J=[];
+function log(m){J.push(new Date().toISOString().slice(11,19)+' '+m);$('j').textContent=J.join('\n');}
+const uuid=()=>crypto.randomUUID?crypto.randomUUID():([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
+async function sha(buf){const h=await crypto.subtle.digest('SHA-256',buf);return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('');}
+let db;function odb(){return new Promise((ok,ko)=>{const r=indexedDB.open('eopur-essai',1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('ops',{keyPath:'id'});d.createObjectStore('meta',{keyPath:'k'});};r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});}
+const tx=(s,m='readonly')=>db.transaction(s,m).objectStore(s);
+const req=r=>new Promise((ok,ko)=>{r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});
+async function meta(k,v){if(v===undefined){const x=await req(tx('meta').get(k));return x&&x.v;}await req(tx('meta','readwrite').put({k,v}));}
+async function etat(){
+  const ops=await req(tx('ops').getAll()); const ph=ops.filter(o=>o.photo);
+  const inst=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+  let pers='inconnu',est='';try{pers=(await navigator.storage.persisted())?'oui':'non';const e=await navigator.storage.estimate();est=Math.round(e.usage/1024)+' ko utilisés';}catch(e){}
+  const sw=navigator.serviceWorker&&navigator.serviceWorker.controller?'actif':'pas encore actif (recharger une fois)';
+  const L=[['Ouverte depuis l\'écran d\'accueil',inst?'oui':'non',inst],['Réseau',navigator.onLine?'en ligne':'HORS LIGNE',true],['Fonctionnement hors ligne',sw,sw==='actif'],
+   ['Stockage persistant accordé',pers,pers==='oui'],['Stockage',est,true],['Nombre d\'ouvertures de la page',await meta('ouv'),true],['Première ouverture',await meta('prem'),true],
+   ['Identifiant de l\'appareil',(await meta('app')).slice(0,8)+'…',true],['Observations enregistrées',ops.length-ph.length,true],['Photos enregistrées',ph.length,true],['Paquets fabriqués',(await meta('paq'))||0,true]];
+  $('etat').innerHTML=L.map(l=>`<tr><td>${l[0]}</td><td class="${l[2]?'ok':'att'}">${l[1]}</td></tr>`).join('');
+  $('liste').innerHTML='';for(const o of ops.sort((a,b)=>a.cree<b.cree?1:-1)){const li=document.createElement('li');
+    if(o.photo){const i=document.createElement('img');i.className='v';i.src=URL.createObjectURL(o.photo);li.appendChild(i);li.appendChild(document.createTextNode('Photo '+Math.round(o.photo.size/1024)+' ko – '+o.cree.slice(0,19).replace('T',' ')));}
+    else li.textContent=o.texte+' – '+o.cree.slice(0,19).replace('T',' ');
+    li.appendChild(document.createTextNode(o.envoi?' – dans le paquet '+o.envoi.slice(0,8):' – enregistré localement'));$('liste').appendChild(li);}
+}
+function reduire(file){return new Promise((ok,ko)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{const k=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);c.toBlob(b=>{URL.revokeObjectURL(u);b?ok(b):ko(new Error('conversion impossible'));},'image/jpeg',0.8);};im.onerror=()=>ko(new Error('image illisible'));im.src=u;});}
+async function fabriquer(){
+  const ops=await req(tx('ops').getAll()); if(!ops.length) throw new Error('rien à envoyer');
+  const zip=new JSZip(), id=uuid(), fichiers=[], lignes=[];
+  for(const o of ops){const l={id_operation:o.id,type:o.photo?'photo':'observation',id_chantier:'CH-TEST',id_logement:'LG-TEST-01',revision_connue:1,cree_le:o.cree};
+    if(o.photo){const b=await o.photo.arrayBuffer(),n='photos/'+o.id+'.jpg';zip.file(n,b);fichiers.push({nom:n,taille:b.byteLength,sha256:await sha(b)});l.fichier=n;}else l.valeur=o.texte; lignes.push(l);}
+  const opj=new TextEncoder().encode(JSON.stringify(lignes,null,1));zip.file('operations.json',opj);fichiers.push({nom:'operations.json',taille:opj.byteLength,sha256:await sha(opj.buffer)});
+  zip.file('manifeste.json',JSON.stringify({format:'eopur-os-paquet',version_format:1,type:'operations',id_paquet:id,appareil:await meta('app'),cree_le:new Date().toISOString(),fichiers},null,1));
+  const blob=await zip.generateAsync({type:'blob',compression:'STORE'}); const h=await sha(await blob.arrayBuffer());
+  const s=tx('ops','readwrite');for(const o of ops){o.envoi=id;s.put(o);} await meta('paq',((await meta('paq'))||0)+1);
+  return {id,blob,h,n:ops.length};
+}
+async function verifier(file){
+  const buf=await file.arrayBuffer(), h=await sha(buf); let zip;
+  try{zip=await JSZip.loadAsync(buf);}catch(e){throw new Error('ce fichier n\'est pas un paquet lisible');}
+  const mf=zip.file('manifeste.json'); if(!mf) throw new Error('manifeste absent');
+  const m=JSON.parse(await mf.async('string')); let ok=0;
+  for(const f of m.fichiers){const z=zip.file(f.nom); if(!z) throw new Error('fichier manquant : '+f.nom); const b=await z.async('arraybuffer'); if(await sha(b)!==f.sha256) throw new Error('empreinte différente : '+f.nom); ok++;}
+  return {m,ok,h,taille:buf.byteLength};
+}
+$('bNote').onclick=async()=>{const t=$('note').value.trim();if(!t)return;await req(tx('ops','readwrite').put({id:uuid(),texte:t,cree:new Date().toISOString()}));$('note').value='';log('B2 observation enregistrée');etat();};
+$('photo').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const b=await reduire(f);await req(tx('ops','readwrite').put({id:uuid(),photo:b,cree:new Date().toISOString()}));log('B2 photo enregistrée : '+Math.round(f.size/1024)+' ko → '+Math.round(b.size/1024)+' ko');}catch(x){log('B2 ÉCHEC photo : '+x.message);}e.target.value='';etat();};
+$('bEnv').onclick=async()=>{try{const p=await fabriquer();const nom='eopur_paquet_'+p.id.slice(0,8)+'.zip',file=new File([p.blob],nom,{type:'application/zip'});
+  log('B3 paquet '+p.id+' : '+p.n+' opérations, '+p.blob.size+' octets, empreinte '+p.h.slice(0,16));
+  $('env').textContent='Paquet '+p.id.slice(0,8)+' – '+p.blob.size+' octets – empreinte '+p.h.slice(0,16);
+  if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:nom});log('B3 partage terminé (à confirmer côté PC)');}catch(x){log('B3 partage annulé ou refusé : '+x.name);}}
+  else{const a=document.createElement('a');a.href=URL.createObjectURL(p.blob);a.download=nom;a.textContent='Partage indisponible : toucher ici pour enregistrer le paquet';a.style.display='block';$('env').appendChild(a);log('B3 partage indisponible sur cet appareil : lien d\'enregistrement proposé');}
+  etat();}catch(x){log('B3 ÉCHEC : '+x.message);}};
+$('recv').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const r=await verifier(f);$('rec').textContent='Paquet '+r.m.id_paquet.slice(0,8)+' lu : '+r.ok+' fichier(s) vérifié(s), '+r.taille+' octets, empreinte '+r.h.slice(0,16);log('B4 paquet reçu '+r.m.id_paquet+' type '+r.m.type+' : '+r.ok+' fichiers conformes, empreinte '+r.h.slice(0,16));}catch(x){$('rec').textContent='Refusé : '+x.message;log('B4 REFUS : '+x.message);}e.target.value='';};
+$('bCopie').onclick=async()=>{const t=$('etat').innerText+'\n'+J.join('\n');try{await navigator.clipboard.writeText(t);log('journal copié');}catch(x){log('copie impossible : sélectionner le texte à la main');}};
+$('bRaz').onclick=async()=>{if($('bRaz').dataset.c!=='1'){$('bRaz').dataset.c='1';$('bRaz').textContent='Toucher encore pour confirmer l\'effacement';return;}await req(tx('ops','readwrite').clear());$('bRaz').dataset.c='';$('bRaz').textContent='Tout effacer (essai seulement)';log('données d\'essai effacées');etat();};
+addEventListener('online',etat);addEventListener('offline',etat);
+(async()=>{db=await odb(); if(!await meta('app')){await meta('app',uuid());await meta('prem',new Date().toISOString().slice(0,19).replace('T',' '));}
+  await meta('ouv',((await meta('ouv'))||0)+1); try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(e){}
+  if('serviceWorker' in navigator){try{await navigator.serviceWorker.register('sw.js');}catch(e){log('B1 mode hors ligne indisponible : '+e.message);}}
+  log('ouverture n° '+await meta('ouv')+(navigator.onLine?' en ligne':' HORS LIGNE'));etat();})();
+window.__t={fabriquer,verifier};
+</script></body></html>
