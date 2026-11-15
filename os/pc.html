@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EOPUR OS</title>
+<link rel="icon" href="icone-180.png">
+<style>
+:root{--fond:#f4f5f7;--carte:#fff;--texte:#1d2430;--doux:#667085;--ligne:#e3e6eb;--marine:#14213d;--marine2:#1f3159;--accent:#0f766e;--accent2:#e6f4f2;--rouge:#b42318;--rouge2:#fdecea;--orange:#b54708;--orange2:#fef0e1;--vert:#067647;--vert2:#e7f6ec;--bleu:#175cd3;--bleu2:#e8f0fe;--gris2:#eef0f3;--ombre:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08)}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{font:14px/1.45 "Segoe UI",system-ui,-apple-system,Roboto,sans-serif;background:var(--fond);color:var(--texte)}
+button,input,select,textarea{font:inherit;color:inherit}
+#app{display:grid;grid-template-columns:232px 1fr;height:100vh}
+nav{background:var(--marine);color:#cfd6e4;display:flex;flex-direction:column;overflow:auto}
+nav .logo{padding:18px 18px 14px;display:flex;align-items:center;gap:10px;color:#fff;font-weight:700;letter-spacing:.04em}
+nav .logo img{width:30px;height:30px;border-radius:7px}
+nav .logo small{display:block;font-weight:400;color:#9aa6bf;letter-spacing:0;font-size:11px}
+nav .grp{padding:12px 18px 4px;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:#7f8bab}
+nav a{display:flex;align-items:center;gap:10px;padding:7px 18px;color:#cfd6e4;text-decoration:none;border-left:3px solid transparent;cursor:pointer}
+nav a:hover{background:var(--marine2);color:#fff}
+nav a.on{background:var(--marine2);color:#fff;border-left-color:#5eead4}
+nav a .nb{margin-left:auto;background:#b42318;color:#fff;border-radius:10px;font-size:11px;padding:0 7px}
+nav .pied{margin-top:auto;padding:12px 18px;font-size:11px;color:#7f8bab;border-top:1px solid #24345a}
+main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+header{display:flex;align-items:center;gap:12px;padding:10px 24px;background:var(--carte);border-bottom:1px solid var(--ligne)}
+header h1{font-size:18px;margin:0;font-weight:650;white-space:nowrap}
+header .chs{min-width:220px}
+#recherche{margin-left:auto;width:min(380px,40vw);padding:7px 12px;border:1px solid var(--ligne);border-radius:8px;background:var(--fond)}
+#zone{flex:1;overflow:auto;padding:20px 24px 60px}
+.b{background:var(--accent);color:#fff;border:0;border-radius:7px;padding:7px 13px;cursor:pointer;font-weight:550;white-space:nowrap}
+.b:hover{filter:brightness(1.08)}.b.g{background:var(--carte);color:var(--texte);border:1px solid var(--ligne)}.b.r{background:var(--rouge)}.b.p{padding:4px 9px;font-size:12.5px}
+.b:disabled{opacity:.5;cursor:default}
+.ligne{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.ligne.fin{justify-content:flex-end}
+.s{color:var(--doux);font-size:12.5px}
+.carte{background:var(--carte);border:1px solid var(--ligne);border-radius:10px;padding:16px 18px;box-shadow:var(--ombre);margin-bottom:16px;min-width:0}
+.carte h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}.carte h2 .ligne{margin-left:auto}
+.grille{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.kpis{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));margin-bottom:16px}
+.kpi{background:var(--carte);border:1px solid var(--ligne);border-radius:10px;padding:12px 14px;box-shadow:var(--ombre);cursor:pointer}
+.kpi b{display:block;font-size:26px;font-weight:650;line-height:1.1}.kpi span{color:var(--doux);font-size:12.5px}
+.kpi.alerte b{color:var(--rouge)}.kpi.att b{color:var(--orange)}
+.tw{overflow:auto;border:1px solid var(--ligne);border-radius:8px;max-height:70vh}
+table.t{border-collapse:collapse;width:100%;background:var(--carte)}
+.t th{position:sticky;top:0;background:#f8f9fb;text-align:left;font-weight:600;font-size:12.5px;color:#475467;padding:8px 10px;border-bottom:1px solid var(--ligne);cursor:pointer;white-space:nowrap}
+.t th.tri1::after{content:" ▲";font-size:9px}.t th.tri-1::after{content:" ▼";font-size:9px}
+.t td{padding:7px 10px;border-bottom:1px solid #f0f1f4;vertical-align:top}
+.t tr.cl{cursor:pointer}.t tr.cl:hover td{background:#f6faf9}
+.t td.vide{text-align:center;color:var(--doux);padding:22px}
+.barre-t{display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.filtre{padding:6px 10px;border:1px solid var(--ligne);border-radius:7px;min-width:220px}
+.pa{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:550;white-space:nowrap}
+.pa.gris{background:var(--gris2);color:#475467}.pa.bleu{background:var(--bleu2);color:var(--bleu)}.pa.vert{background:var(--vert2);color:var(--vert)}.pa.orange{background:var(--orange2);color:var(--orange)}.pa.rouge{background:var(--rouge2);color:var(--rouge)}
+.modal{position:fixed;inset:0;background:rgba(16,24,40,.45);display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;z-index:50;overflow:auto}
+.boite{background:var(--carte);border-radius:12px;padding:20px 22px;width:min(620px,100%);box-shadow:0 20px 40px rgba(0,0,0,.2)}
+.boite.large{width:min(1000px,100%)}.boite h3{margin:0 0 12px;font-size:17px}
+.boite form{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+.ch{display:flex;flex-direction:column;gap:3px;min-width:0}.ch.plein,.alertes,.pied{grid-column:1/-1}
+.ch label{font-size:12.5px;font-weight:600;color:#344054}.ch small{color:var(--doux);font-size:11.5px}
+.ch input,.ch select,.ch textarea{padding:7px 9px;border:1px solid #d0d5dd;border-radius:7px;background:#fff;width:100%}
+.ch input[type=checkbox]{width:auto}
+.multi{max-height:220px;overflow:auto;border:1px solid #d0d5dd;border-radius:7px;padding:6px 10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:2px 10px}
+.alertes div{background:var(--orange2);color:var(--orange);padding:6px 10px;border-radius:7px;margin-top:4px;font-size:13px}
+.pied{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.contenu{max-height:65vh;overflow:auto}
+#toasts{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:90}
+.toast{background:#101828;color:#fff;padding:10px 14px;border-radius:8px;box-shadow:var(--ombre);max-width:420px;transition:opacity .5s}
+.toast.ko{background:var(--rouge)}.toast.out{opacity:0}
+.onglets{display:flex;gap:2px;border-bottom:1px solid var(--ligne);margin-bottom:14px;flex-wrap:wrap}
+.onglets a{padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;color:var(--doux);font-weight:550}
+.onglets a.on{color:var(--accent);border-bottom-color:var(--accent)}
+dl.fiche{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;margin:0}dl.fiche dt{color:var(--doux)}dl.fiche dd{margin:0;white-space:pre-wrap}
+.alerte-l{background:var(--orange2);color:var(--orange);border-radius:8px;padding:8px 12px;margin-bottom:8px}
+.info-l{background:var(--bleu2);color:var(--bleu);border-radius:8px;padding:8px 12px;margin-bottom:8px}
+.ok-l{background:var(--vert2);color:var(--vert);border-radius:8px;padding:8px 12px;margin-bottom:8px}
+.ko-l{background:var(--rouge2);color:var(--rouge);border-radius:8px;padding:8px 12px;margin-bottom:8px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--ligne);border:1px solid var(--ligne);border-radius:8px;overflow:hidden}
+.cal .j{background:var(--carte);min-height:104px;padding:5px 6px;font-size:12px}.cal .j.hors{background:#fafbfc;color:#98a2b3}.cal .j.auj{box-shadow:inset 0 0 0 2px var(--accent)}
+.cal .tete{background:#f8f9fb;padding:6px;font-weight:600;font-size:12px;text-align:center}
+.ev{display:block;margin-top:3px;padding:2px 6px;border-radius:5px;background:var(--bleu2);color:var(--bleu);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev.vert{background:var(--vert2);color:var(--vert)}.ev.gris{background:var(--gris2);color:#475467;text-decoration:line-through}.ev.rouge{background:var(--rouge2);color:var(--rouge)}
+.apercu{border:1px solid var(--ligne);border-radius:8px;padding:24px 28px;background:#fff;font-family:Calibri,Arial,sans-serif;max-height:60vh;overflow:auto}
+.apercu table{border-collapse:collapse;width:100%}.apercu td,.apercu th{border:1px solid #999;padding:4px 6px;font-size:12px}
+.prov{font-size:11px;color:var(--doux)}
+#accueil{position:fixed;inset:0;background:var(--marine);display:flex;align-items:center;justify-content:center;z-index:100;color:#fff}
+#accueil .boite{color:var(--texte);text-align:center;width:min(520px,92vw)}
+#accueil img{width:64px;border-radius:14px}
+mark{background:#fff3b0;padding:0 1px}
+@media (max-width:900px){#app{grid-template-columns:1fr}nav{display:none}nav.ouvert{display:flex;position:fixed;inset:0 30% 0 0;z-index:60}#menu{display:inline-block!important}.boite form{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="accueil"><div class="boite"><img src="icone-512.png" alt=""><h3 style="margin-top:10px">EOPUR OS</h3>
+<p class="s" id="acc_txt">Chargement…</p><div class="ligne" style="justify-content:center" id="acc_btn"></div></div></div>
+<div id="app">
+<nav id="nav">
+  <div class="logo"><img src="icone-180.png" alt=""><div>EOPUR OS<small>Gestion des chantiers</small></div></div>
+  <div class="grp">Pilotage</div>
+  <a data-p="tableau">Tableau de bord</a>
+  <a data-p="chantiers">Chantiers</a>
+  <a data-p="echeancier">Échéancier <span class="nb" id="nb_ech" hidden></span></a>
+  <div class="grp">Terrain</div>
+  <a data-p="logements">Logements</a>
+  <a data-p="planning">Planning</a>
+  <a data-p="interventions">Suivi des interventions</a>
+  <a data-p="anomalies">Anomalies <span class="nb" id="nb_ano" hidden></span></a>
+  <div class="grp">Documents</div>
+  <a data-p="documents">Centre documentaire</a>
+  <a data-p="rapports">Rapports de visite</a>
+  <a data-p="avis">Avis de passage</a>
+  <a data-p="doe">DOE</a>
+  <a data-p="assistant">Assistant documentaire</a>
+  <div class="grp">Technique et chiffrage</div>
+  <a data-p="etudes">Études techniques VMC</a>
+  <a data-p="listings">Listings pour devis</a>
+  <a data-p="prix">Demandes de prix</a>
+  <div class="grp">Système</div>
+  <a data-p="synchro">Téléphone et OneDrive <span class="nb" id="nb_syn" hidden></span></a>
+  <a data-p="parametres">Paramètres et sauvegardes</a>
+  <div class="pied" id="pied">—</div>
+</nav>
+<main>
+  <header><button class="b g" id="menu" style="display:none">☰</button><h1 id="titre">EOPUR OS</h1>
+    <select class="ch chs" id="chantier_actif" title="Chantier de travail"></select>
+    <input id="recherche" placeholder="Rechercher partout (logement, chantier, document, anomalie…)"></header>
+  <div id="zone"></div>
+</main>
+</div>
+<div id="toasts"></div>
+<script src="lib/sql-wasm.js"></script>
+<script src="lib/jszip.min.js"></script>
+<script src="lib/exceljs.min.js"></script>
+<script src="js/commun.js"></script>
+<script src="js/db.js"></script>
+<script src="js/metier.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/docx.js"></script>
+<script src="js/excel.js"></script>
+<script src="js/documents.js"></script>
+<script src="js/etudes.js"></script>
+<script src="js/synchro.js"></script>
+<script src="js/pages.js"></script>
+<script src="js/pages_docs.js"></script>
+<script src="js/pages_tech.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

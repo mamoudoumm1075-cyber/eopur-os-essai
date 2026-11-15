@@ -1,0 +1,160 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>EOPUR OS Terrain</title>
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icone-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="theme-color" content="#14213d">
+<style>
+:root{--m:#14213d;--a:#0f766e;--g:#eef0f3;--l:#e3e6eb;--t:#1d2430;--d:#667085}
+*{box-sizing:border-box}body{font:16px/1.4 -apple-system,"Segoe UI",Roboto,sans-serif;margin:0;color:var(--t);background:#f4f5f7;padding-bottom:calc(74px + env(safe-area-inset-bottom))}
+header{background:var(--m);color:#fff;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top));position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px}
+header h1{font-size:17px;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}header small{display:block;font-weight:400;opacity:.8;font-size:12.5px}
+header button{background:rgba(255,255,255,.14);color:#fff;border:0;border-radius:8px;padding:8px 11px;font-size:15px}
+main{padding:12px max(14px,env(safe-area-inset-left)) 12px max(14px,env(safe-area-inset-right));max-width:700px;margin:auto}
+h2{font-size:15px;color:var(--m);margin:18px 0 8px;text-transform:uppercase;letter-spacing:.04em}
+.s{font-size:13px;color:var(--d)}
+.c{background:#fff;border:1px solid var(--l);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.btn{display:block;width:100%;padding:14px;margin:8px 0;font-size:16px;font-weight:600;border:0;border-radius:10px;background:var(--a);color:#fff;text-align:center}
+.btn.g{background:#fff;color:var(--m);border:1px solid var(--l)}.btn:disabled{opacity:.4}
+.res{display:grid;grid-template-columns:1fr 1fr;gap:8px}.res button{padding:14px 6px;border:2px solid var(--l);border-radius:10px;background:#fff;color:var(--t);font-size:15px;font-weight:600}
+.res button.on{border-color:var(--a);background:#e6f4f2;color:var(--a)}
+input,textarea,select{width:100%;padding:12px;font-size:16px;border:1px solid #c9ced6;border-radius:10px;font-family:inherit;background:#fff}
+label.f{display:block;font-size:13px;font-weight:600;margin:12px 0 4px;color:#344054}
+.li{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:12px 2px;border-bottom:1px solid var(--l)}.li:last-child{border:0}.li b{display:block}.li small{color:var(--d)}
+.pa{font-size:12px;padding:3px 9px;border-radius:12px;white-space:nowrap;background:var(--g);color:#475467;font-weight:600}.pa.v{background:#e7f6ec;color:#067647}.pa.o{background:#fef0e1;color:#b54708}.pa.r{background:#fdecea;color:#b42318}.pa.b{background:#e8f0fe;color:#175cd3}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}.chips button{flex:none;border:1px solid var(--l);background:#fff;border-radius:16px;padding:6px 12px;font-size:13.5px}.chips button.on{background:var(--m);color:#fff;border-color:var(--m)}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--l);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:5}
+nav button{flex:1;border:0;background:none;padding:10px 2px 12px;font-size:12px;color:var(--d)}nav button b{display:block;font-size:19px;line-height:1.2}nav button.on{color:var(--a);font-weight:700}
+#msg{position:fixed;left:12px;right:12px;bottom:calc(82px + env(safe-area-inset-bottom));padding:12px 14px;border-radius:10px;font-weight:600;display:none;z-index:9;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+#av{padding:9px 16px;font-size:13px;font-weight:600;display:none;background:#fef0e1;color:#b54708}
+img.v{width:72px;height:72px;object-fit:cover;border-radius:8px;margin:4px 4px 0 0}
+input[type=file]{display:none}
+.num{font-size:26px;font-weight:700}
+</style></head><body>
+<header><button id="ret" hidden>‹</button><h1 id="titre">EOPUR OS<small id="sous">Terrain</small></h1></header><div id="av"></div>
+<main id="vue"></main><div id="msg"></div>
+<nav id="nav"><button data-e="accueil"><b>⌂</b>Accueil</button><button data-e="jour"><b>☀</b>Aujourd'hui</button><button data-e="logements"><b>▦</b>Logements</button><button data-e="envoi"><b>⇅</b>Échanges<span id="nbop"></span></button></nav>
+<input type="file" id="recv" accept=".zip,application/zip" multiple><input type="file" id="ph" accept="image/*" capture="environment">
+<script src="jszip.min.js"></script><script src="commun.js"></script>
+<script>
+const $=s=>document.querySelector(s),esc=EO.esc;
+const INST=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+let db,ecran='accueil',pile=[],chId=null,lgId=null,filtre='',recherche='',appareil='';
+// ---------- stockage local (IndexedDB)
+function odb(){return new Promise((ok,ko)=>{const r=indexedDB.open('eopur_os_terrain',1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('kv',{keyPath:'k'});d.createObjectStore('chantiers',{keyPath:'id'});d.createObjectStore('ops',{keyPath:'id_operation'});d.createObjectStore('photos',{keyPath:'id'});d.createObjectStore('journal',{autoIncrement:true});};r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});}
+const rq=r=>new Promise((ok,ko)=>{r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});
+const S=(n,m)=>db.transaction(n,m||'readonly').objectStore(n);
+const tous=n=>rq(S(n).getAll()),lire=(n,k)=>rq(S(n).get(k)),mettre=(n,v)=>rq(S(n,'readwrite').put(v)),suppr=(n,k)=>rq(S(n,'readwrite').delete(k));
+async function kv(k,v){if(v===undefined){const x=await lire('kv',k);return x&&x.v;}await mettre('kv',{k,v});}
+async function journal(t){await rq(S('journal','readwrite').add({q:EO.now(),t}));}
+const ETATS={local:['Enregistré sur le téléphone','o'],transfere:['Transmis à OneDrive','b'],recu:['Reçu par le PC','b'],integree:['Intégré à la base','v'],conflit:['En conflit (à trancher sur le PC)','r'],rejetee:['Refusé par le PC','r'],doublon:['Déjà reçu par le PC','v']};
+const COUL={'Intervention réalisée':'v','Terminé':'v','Absent':'o','Inaccessible':'o','À repasser':'o',"Refus d'accès":'r','Problème technique':'r','Passage programmé':'b','À prévenir':'b'};
+const pa=(t,c)=>`<span class="pa ${c||COUL[t]||''}">${esc(t)}</span>`;
+function msg(t,c){const m=$('#msg');m.textContent=t||'';m.style.display=t?'block':'none';m.style.background=c==='ko'?'#fdecea':c==='att'?'#fef0e1':'#e7f6ec';m.style.color=c==='ko'?'#b42318':c==='att'?'#b54708':'#067647';clearTimeout(msg.t);if(t)msg.t=setTimeout(()=>m.style.display='none',c==='ko'?7000:3500);}
+const jour=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+const dFr=s=>s?s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4):'';
+const lib=l=>[l.adresse,l.batiment&&'bât. '+l.batiment,l.cage&&'cage '+l.cage,'n° '+l.numero].filter(Boolean).join(' ');
+// ---------- état courant d'un logement = instantané du PC + opérations locales non encore intégrées
+async function vueChantier(id){const c=await lire('chantiers',id);if(!c)return null;const ops=(await tous('ops')).filter(o=>o.id_chantier===id&&['local','transfere','recu','conflit'].includes(o.etat)).sort((a,b)=>a.cree_le<b.cree_le?-1:1);
+  const L=c.logements.map(l=>Object.assign({},l,{ops:[]}));const parId=Object.fromEntries(L.map(l=>[l.id,l]));
+  for(const o of ops){const l=parId[o.id_logement];if(!l)continue;l.ops.push(o);if(o.type==='resultat'){l.statut=o.resultat==='Intervention réalisée'?'Intervention réalisée':(o.repassage&&o.resultat!=="Refus d'accès"&&!['Absent','Inaccessible'].includes(o.resultat))?'À repasser':o.resultat;if(o.observation)l.observation=o.observation;l.repassage=o.repassage||'';}if(o.type==='observation')l.observation=o.observation;}
+  return Object.assign({},c,{logements:L,parId,opsLocales:ops});}
+// ---------- écrans
+const nav=(e,args)=>{pile.push([ecran,chId,lgId]);ecran=e;if(args){if('ch' in args)chId=args.ch;if('lg' in args)lgId=args.lg;}dessiner();scrollTo(0,0);};
+$('#ret').onclick=()=>{const p=pile.pop();if(p){[ecran,chId,lgId]=p;dessiner();}};
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{pile=[];ecran=b.dataset.e;lgId=null;dessiner();});
+async function dessiner(){
+  const v=$('#vue'),C=await tous('chantiers'),ops=await tous('ops'),aEnv=ops.filter(o=>o.etat==='local').length;
+  $('#nbop').textContent=aEnv?' ('+aEnv+')':'';document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.e===ecran||(ecran==='logement'&&b.dataset.e==='logements')));
+  $('#ret').hidden=!pile.length;
+  if(!chId&&C.length===1)chId=C[0].id;
+  const c=chId?await vueChantier(chId):null;$('#titre').innerHTML=(c?esc(c.chantier.nom):'EOPUR OS')+'<small id="sous">'+(c?esc(c.chantier.reference||'')+' · reçu le '+dFr(c.recu_le):'Terrain')+'</small>';
+  const av=$('#av');av.style.display=!INST?'block':'none';av.textContent='Ouvrez EOPUR OS depuis l\'icône de l\'écran d\'accueil (Safari > Partager > Sur l\'écran d\'accueil) : sinon les saisies ne sont pas conservées au même endroit.';
+  if(ecran==='accueil'){
+    v.innerHTML=`<h2>Chantiers sur ce téléphone</h2>${C.length?C.map(x=>`<div class="c li" data-c="${x.id}"><div><b>${esc(x.chantier.nom)}</b><small>${x.logements.length} logements · ${x.interventions.length} intervention(s) · reçu le ${dFr(x.recu_le)}</small></div>${x.id===chId?pa('actif','v'):''}</div>`).join(''):'<div class="c s">Aucun chantier. Sur le PC : « Téléphone et OneDrive » → « Déposer le paquet ». Ici : « Recevoir », puis choisissez le fichier dans OneDrive › EOPUR_OS › vers_telephone.</div>'}
+      <button class="btn" id="rc">Recevoir un chantier ou un accusé</button>
+      ${aEnv?`<button class="btn g" id="ev">Envoyer ${aEnv} saisie(s) au PC</button>`:''}
+      ${c?await resume(c):''}`;
+    v.querySelectorAll('[data-c]').forEach(x=>x.onclick=()=>{chId=x.dataset.c;kv('chantier',chId);dessiner();});
+    $('#rc').onclick=()=>$('#recv').click();const e=$('#ev');if(e)e.onclick=envoyer;return;}
+  if(!c){v.innerHTML='<div class="c s">Recevez d\'abord un chantier depuis l\'accueil.</div>';return;}
+  if(ecran==='jour'){
+    const t=jour(),I=c.interventions.slice().sort((a,b)=>(a.date+a.heure_debut)<(b.date+b.heure_debut)?-1:1),auj=I.filter(i=>i.date===t),av=I.filter(i=>i.date>t),re=I.filter(i=>i.date<t);
+    const bloc=(i)=>{const n=i.passages.length,f=i.passages.filter(p=>c.parId[p.id_logement]&&c.parId[p.id_logement].ops.some(o=>o.type==='resultat')||p.resultat).length;return `<div class="c li" data-i="${i.id}"><div><b>${esc(i.type)}${i.heure_debut?' · '+esc(i.heure_debut)+(i.heure_fin?'–'+esc(i.heure_fin):''):''}</b><small>${dFr(i.date)} · ${n} logement(s)${i.intervenant?' · '+esc(i.intervenant):''}</small>${i.observations?'<small>'+esc(i.observations)+'</small>':''}</div>${pa(f+'/'+n,f===n?'v':'o')}</div>`;};
+    v.innerHTML=`<h2>Aujourd'hui</h2>${auj.map(bloc).join('')||'<div class="c s">Aucune intervention planifiée aujourd\'hui.</div>'}${re.length?'<h2>En retard</h2>'+re.map(bloc).join(''):''}${av.length?'<h2>À venir</h2>'+av.map(bloc).join(''):''}`;
+    v.querySelectorAll('[data-i]').forEach(x=>x.onclick=()=>{filtre='it:'+x.dataset.i;nav('logements');});return;}
+  if(ecran==='logements'){
+    const it=filtre.startsWith('it:')?c.interventions.find(i=>'it:'+i.id===filtre):null;
+    let L=c.logements;if(it){const ids=new Set(it.passages.map(p=>p.id_logement));L=L.filter(l=>ids.has(l.id));}else if(filtre)L=L.filter(l=>filtre==='areprendre'?['Absent','Inaccessible','À repasser',"Refus d'accès",'Problème technique'].includes(l.statut):l.statut===filtre);
+    if(recherche){const r=recherche.toLowerCase();L=L.filter(l=>lib(l).toLowerCase().includes(r)||(l.observation||'').toLowerCase().includes(r));}
+    const st=[...new Set(c.logements.map(l=>l.statut))];
+    v.innerHTML=`<input id="rch" placeholder="Rechercher (adresse, n°, observation)" value="${esc(recherche)}"><div class="chips" style="margin-top:8px"><button data-f="" class="${!filtre?'on':''}">Tous (${c.logements.length})</button>${it?`<button class="on">${esc(it.type)} du ${dFr(it.date)}</button>`:''}<button data-f="areprendre" class="${filtre==='areprendre'?'on':''}">À reprendre</button>${st.map(s=>`<button data-f="${esc(s)}" class="${filtre===s?'on':''}">${esc(s)} (${c.logements.filter(l=>l.statut===s).length})</button>`).join('')}</div>
+      <div class="c" style="margin-top:8px;padding:0 12px">${L.map(l=>`<div class="li" data-l="${l.id}"><div><b>${esc('n° '+l.numero)}${l.etage?' · '+esc(l.etage):''}</b><small>${esc([l.adresse,l.batiment&&'bât. '+l.batiment,l.cage&&'cage '+l.cage].filter(Boolean).join(' · '))}${l.observation?'<br>'+esc(l.observation):''}</small></div><div style="text-align:right">${pa(l.statut)}${l.ops.length?'<br><small class="s">non transmis</small>':''}</div></div>`).join('')||'<p class="s">Aucun logement.</p>'}</div>`;
+    const r=$('#rch');r.oninput=()=>{recherche=r.value;clearTimeout(r.t);r.t=setTimeout(()=>{dessiner().then(()=>{const n=$('#rch');n.focus();n.setSelectionRange(n.value.length,n.value.length);});},250);};
+    v.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{filtre=b.dataset.f;dessiner();});
+    v.querySelectorAll('[data-l]').forEach(x=>x.onclick=()=>nav('logement',{lg:x.dataset.l}));return;}
+  if(ecran==='logement'){const l=c.parId[lgId];if(!l){ecran='logements';return dessiner();}
+    const pass=c.interventions.filter(i=>i.passages.some(p=>p.id_logement===l.id)),an=c.anomalies.filter(a=>a.id_logement===l.id);
+    const ph=(await tous('photos')).filter(p=>p.id_logement===l.id);
+    v.innerHTML=`<div class="c"><div class="li" style="padding-top:0"><div><b style="font-size:19px">Logement n° ${esc(l.numero)}</b><small>${esc([l.adresse,l.ville].filter(Boolean).join(', '))}<br>${esc([l.batiment&&'Bâtiment '+l.batiment,l.cage&&'cage '+l.cage,l.etage,l.typo].filter(Boolean).join(' · '))}${l.occupant?'<br>Occupant : '+esc(l.occupant):''}${l.telephone?' · <a href="tel:'+esc(l.telephone)+'">'+esc(l.telephone)+'</a>':''}</small></div>${pa(l.statut)}</div>
+      ${pass.length?'<div class="s">Prévu : '+pass.map(i=>esc(i.type)+' le '+dFr(i.date)).join(', ')+'</div>':''}${l.repassage?'<div class="s">Repassage prévu le '+dFr(l.repassage)+'</div>':''}${an.length?'<div class="s" style="color:#b42318">'+an.length+' anomalie(s) ouverte(s) : '+an.map(a=>esc(a.description)).join(' ; ')+'</div>':''}</div>
+      <h2>Résultat du passage</h2><div class="res">${(c.resultats||EO.RESULTATS).map(r=>`<button data-r="${esc(r)}">${esc(r)}</button>`).join('')}</div>
+      <label class="f">Observation</label><textarea id="obs" rows="3">${esc(l.observation||'')}</textarea>
+      <label class="f">Actions à mener</label><input id="act">
+      <label class="f">Date de repassage (si connue)</label><input type="date" id="rep" value="${esc(l.repassage||'')}">
+      <button class="btn" id="ok">Enregistrer le résultat</button>
+      <div class="res" style="margin-top:4px"><button id="pho">📷 Photo</button><button id="ano">⚠ Anomalie</button></div>
+      ${ph.length?'<div>'+ph.map(p=>`<img class="v" src="${URL.createObjectURL(p.blob)}">`).join('')+'</div>':''}
+      ${l.ops.length?'<h2>Saisies non encore intégrées</h2><div class="c">'+l.ops.map(o=>`<div class="li"><div><b>${esc(o.type==='resultat'?o.resultat:o.type)}</b><small>${new Date(o.cree_le).toLocaleString('fr-FR')}${o.observation?' · '+esc(o.observation):''}</small></div>${pa(...ETATS[o.etat])}</div>`).join('')+'</div>':''}`;
+    let choix=null;v.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{choix=b.dataset.r;v.querySelectorAll('[data-r]').forEach(x=>x.classList.toggle('on',x===b));});
+    $('#ok').onclick=async()=>{if(!choix)return msg('Choisissez un résultat','ko');const obs=$('#obs').value.trim(),rep=$('#rep').value;
+      if(['Problème technique',"Refus d'accès",'Inaccessible','À repasser'].includes(choix)&&!obs)return msg('Une observation est nécessaire pour « '+choix+' »','ko');
+      const it=pass.find(i=>i.date===jour())||pass.find(i=>i.date>=jour())||pass[pass.length-1],p=it?it.passages.find(p=>p.id_logement===l.id):null;
+      await ajouterOp({type:'resultat',id_chantier:c.id,id_logement:l.id,id_passage:p?p.id:null,resultat:choix,observation:obs,actions:$('#act').value.trim(),repassage:rep,revision_base:l.revision,intervenant:await kv('nom')||''});
+      msg('Résultat enregistré sur le téléphone');const p2=pile.pop();if(p2){[ecran,chId,lgId]=p2;}dessiner();};
+    $('#pho').onclick=()=>{const i=$('#ph');i.onchange=async()=>{const f=i.files[0];if(!f)return;const id=EO.uuid();const blob=await reduire(f);await mettre('photos',{id,id_logement:l.id,blob,nom:id+'.jpg'});await ajouterOp({id_operation:id,type:'photo',id_chantier:c.id,id_logement:l.id,fichier:'photos/'+id+'.jpg',legende:'photo terrain'});i.value='';msg('Photo enregistrée');dessiner();};i.click();};
+    $('#ano').onclick=()=>nav('anomalie');return;}
+  if(ecran==='anomalie'){const l=c.parId[lgId];v.innerHTML=`<h2>Nouvelle anomalie</h2><div class="c s">${esc(lib(l))}</div><label class="f">Description</label><textarea id="ds" rows="5"></textarea><label class="f">Priorité</label><select id="pr">${(c.priorites||['Basse','Normale','Haute','Urgente']).map(p=>`<option ${p==='Normale'?'selected':''}>${p}</option>`).join('')}</select><button class="btn" id="ok">Enregistrer l'anomalie</button>`;
+    $('#ok').onclick=async()=>{const d=$('#ds').value.trim();if(!d)return msg('Décrivez l\'anomalie','ko');await ajouterOp({type:'anomalie',id_chantier:c.id,id_logement:l.id,description:d,priorite:$('#pr').value});msg('Anomalie enregistrée');$('#ret').click();};return;}
+  if(ecran==='envoi'){
+    const parEtat=e=>ops.filter(o=>o.etat===e).length,J=(await tous('journal')).slice(-40).reverse();
+    v.innerHTML=`<h2>Saisies</h2><div class="c">${Object.entries(ETATS).map(([k,[l,cc]])=>`<div class="li"><span>${l}</span>${pa(String(parEtat(k)),cc)}</div>`).join('')}</div>
+      <button class="btn" id="ev" ${parEtat('local')?'':'disabled'}>Envoyer ${parEtat('local')} saisie(s) au PC</button>
+      ${parEtat('transfere')?`<button class="btn g" id="re">Renvoyer les ${parEtat('transfere')} saisie(s) non confirmée(s)</button>`:''}
+      <button class="btn g" id="rc">Recevoir un chantier ou un accusé</button>
+      <p class="s">Envoyer : choisissez « Enregistrer dans Fichiers » › OneDrive › EOPUR_OS › <b>vers_pc</b>. Recevoir : OneDrive › EOPUR_OS › <b>vers_telephone</b>.</p>
+      <label class="f">Votre nom (intervenant)</label><input id="nom" value="${esc(await kv('nom')||'')}">
+      <h2>Journal</h2><div class="c s" style="font:12px ui-monospace,Menlo,monospace">${J.map(j=>esc(new Date(j.q).toLocaleString('fr-FR')+' – '+j.t)).join('<br>')||'—'}</div>
+      <p class="s">Appareil ${esc(appareil)} · ${INST?'application installée':'Safari'} · version ${EO.VERSION_APP}</p>`;
+    $('#ev').onclick=envoyer;const re=$('#re');if(re)re.onclick=()=>envoyer(true);$('#rc').onclick=()=>$('#recv').click();$('#nom').onchange=e=>kv('nom',e.target.value.trim());}
+}
+async function resume(c){const L=c.logements,n=s=>L.filter(l=>s.includes(l.statut)).length;return `<h2>${esc(c.chantier.nom)}</h2><div class="c" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center"><div><div class="num">${L.length}</div><span class="s">logements</span></div><div><div class="num" style="color:#067647">${n(['Intervention réalisée','Terminé'])}</div><span class="s">réalisés</span></div><div><div class="num" style="color:#b54708">${n(['Absent','Inaccessible','À repasser',"Refus d'accès",'Problème technique'])}</div><span class="s">à reprendre</span></div></div>`;}
+// photo réduite (bord max 1600 px) pour limiter la taille des paquets
+async function reduire(f){try{const b=await createImageBitmap(f),k=Math.min(1,1600/Math.max(b.width,b.height)),cv=document.createElement('canvas');cv.width=Math.round(b.width*k);cv.height=Math.round(b.height*k);cv.getContext('2d').drawImage(b,0,0,cv.width,cv.height);return await new Promise(r=>cv.toBlob(r,'image/jpeg',.82));}catch(e){return f;}}
+async function ajouterOp(o){o.id_operation=o.id_operation||EO.uuid();o.cree_le=EO.now();o.appareil=appareil;o.etat='local';await mettre('ops',o);await journal('saisie '+o.type+(o.resultat?' : '+o.resultat:''));}
+// ---------- envoi : paquet « operations » partagé vers OneDrive
+async function envoyer(renvoi){
+  const ops=(await tous('ops')).filter(o=>o.etat==='local'||(renvoi===true&&o.etat==='transfere'));if(!ops.length)return msg('Rien à envoyer','att');
+  const fichiers=[{nom:'operations.json',data:JSON.stringify(ops.map(o=>{const x=Object.assign({},o);delete x.etat;delete x.paquet;return x;}))}];
+  for(const o of ops.filter(o=>o.type==='photo')){const p=await lire('photos',o.id_operation);if(p)fichiers.push({nom:o.fichier,data:await p.blob.arrayBuffer()});}
+  const p=await EO.fabriquer('operations',appareil,fichiers);const file=new File([p.blob],p.nom,{type:'application/zip'});
+  try{
+    if(navigator.canShare&&navigator.canShare({files:[file]}))await navigator.share({files:[file],title:p.nom});
+    else{const a=document.createElement('a');a.href=URL.createObjectURL(p.blob);a.download=p.nom;document.body.appendChild(a);a.click();a.remove();}
+  }catch(e){if(e.name==='AbortError'){msg('Envoi annulé : les saisies restent sur le téléphone','att');return;}throw e;}
+  for(const o of ops){o.etat='transfere';o.paquet=p.id;await mettre('ops',o);}
+  await journal('paquet '+p.nom+' : '+ops.length+' saisie(s)');msg(ops.length+' saisie(s) transmise(s). Le PC confirmera par un accusé.');dessiner();}
+// ---------- réception : chantier ou accusé
+$('#recv').onchange=async e=>{for(const f of e.target.files){try{const p=await EO.lire(await f.arrayBuffer());
+  if(p.m.type==='chantier'){const d=p.json('chantier.json'),anc=await lire('chantiers',d.chantier.id);
+    if(anc&&anc.cree_le>p.m.cree_le){msg('Paquet plus ancien que celui déjà reçu : ignoré','att');continue;}
+    await mettre('chantiers',Object.assign(d,{id:d.chantier.id,recu_le:EO.now(),cree_le:p.m.cree_le,id_paquet:p.m.id_paquet}));chId=d.chantier.id;await kv('chantier',chId);await journal('chantier reçu : '+d.chantier.nom+' ('+d.logements.length+' logements)');msg('Chantier reçu : '+d.logements.length+' logements');}
+  else if(p.m.type==='accuse'){const a=p.json('accuse.json');let n=0;for(const r of a.operations||[]){const o=await lire('ops',r.id_operation);if(!o)continue;const e2=a.stade==='recu'?(o.etat==='transfere'?'recu':o.etat):r.resultat;if(ETATS[e2]&&o.etat!==e2){o.etat=e2;o.motif=r.motif||'';await mettre('ops',o);n++;}}
+    // ménage : les saisies intégrées depuis plus de 30 jours sont retirées
+    for(const o of await tous('ops'))if(['integree','doublon'].includes(o.etat)&&Date.now()-new Date(o.cree_le)>30*864e5){await suppr('ops',o.id_operation);if(o.type==='photo')await suppr('photos',o.id_operation);}
+    await journal('accusé '+a.stade+' : '+n+' saisie(s) mise(s) à jour');msg('Accusé du PC : '+n+' saisie(s) mise(s) à jour');}
+  else msg('Ce fichier n\'est pas destiné au téléphone','ko');
+}catch(x){msg('Fichier refusé : '+x.message,'ko');await journal('fichier refusé '+f.name+' : '+x.message);}}e.target.value='';dessiner();};
+(async()=>{db=await odb();appareil=await kv('appareil');if(!appareil){appareil='TEL-'+EO.uuid().slice(0,8);await kv('appareil',appareil);}
+  chId=await kv('chantier')||null;try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(e){}
+  if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});dessiner();})();
+</script></body></html>

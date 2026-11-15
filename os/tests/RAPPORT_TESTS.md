@@ -1,0 +1,132 @@
+# Rapport de tests – EOPUR OS 1.0 (15/11/2026)
+
+Environnement : Chromium (Playwright) sur Linux, dossiers simulés par le système de fichiers privé du navigateur (OPFS) à la place du sélecteur de dossier Windows. Fichiers Word et Excel produits relus par python-docx, openpyxl et LibreOffice.
+
+**Résultat : 118 contrôles sur 118 réussis** (`test_pc.js` 49, `test_flux.js` 47, `test_ui.js` 22). Aucune erreur JavaScript.
+
+## Limites de ces tests
+
+- Pas d'essai sur le PC Windows ni l'iPhone réels pour cette version (essai réel de l'architecture déjà réussi sur les deux appareils avec le prototype : B1–B6, A1–A5 ; l'utilisateur a renoncé aux essais réels).
+- Le partage iOS « Enregistrer dans Fichiers » est remplacé dans le test par un téléchargement (même paquet).
+- Chromium sans écran ferme l'onglet quand il relit un dossier mémorisé : le test garde les dossiers en mémoire. Ce mécanisme a fonctionné sur le PC réel avec le prototype.
+
+## Détail
+
+- ouverture : base créée dans le dossier
+- création chantier
+- référence unique
+- nom obligatoire
+- historique chantier
+- création en série – 12 logements
+- doublon de logement refusé (série annulée en entier)
+- numéro obligatoire
+- intervention planifiée → logements « Passage programmé »
+- alerte doublon même jour – doublon : logement 12 rue des Lilas n° 1 déjà prévu le même jour | chevauchement : alexandre déjà prévu de 08:30 à 12:00
+- alerte chevauchement intervenant
+- alerte incohérence horaire
+- résultat réalisé → statut logement
+- absent + date de repassage conservés
+- révision et historique du logement
+- intervention « Réalisée » quand tout est saisi
+- annulation → logements « À planifier »
+- anomalie : statut et historique
+- statut d'anomalie inconnu refusé
+- tableau de bord : indicateurs réels – {"chantiersActifs":1,"aTraiter":8,"aVenir":0,"enRetard":0,"realisees":4,"absents":1,"inaccessibles":0,"aRepasser":1,"anomalies":1,"anomaliesUrgentes":1,"docsAttente":0,"echeances7":0,"echeancesDepassees":1,"conflits":0,"paquetsAttente":0}
+- échéancier unifié (échéance + repassage + fin)
+- écran tableau
+- écran chantiers
+- écran chantiers:CH-ba8e2aaf
+- écran logements
+- écran planning
+- écran interventions
+- écran interventions:IT-a6cd052d
+- écran anomalies
+- écran echeancier
+- écran documents
+- écran rapports
+- écran avis
+- écran doe
+- écran assistant
+- écran etudes
+- écran listings
+- écran prix
+- écran synchro
+- écran parametres
+- planning vue jour
+- planning vue semaine
+- planning vue mois
+- liste des logements affichée
+- recherche globale
+- restauration d'une sauvegarde
+- fichier base sur disque
+- persistance après rechargement
+- aucune erreur JavaScript
+- lecture de la trame Excel (blocs d'adresse) – {"n":6,"nouveaux":5,"dbl":1,"inconnus":["Bizarre"],"st":["Intervention réalisée","Absent","À planifier","Problème technique","À planifier"]}
+- doublon dans le fichier détecté, non fusionné
+- statuts de la trame convertis
+- statut inconnu signalé et conservé en observation
+- import Excel validé : logements créés
+- historique des passages repris du fichier
+- fichier importé archivé dans le centre documentaire
+- export suivi au format trame relu à l'identique – {"n":8,"st":"Fait,Abs,Retour,,,,,","p":2,"nom":"SUIVI DU REMPLACEMENT DES BOUCHES NANTERRE PARC SUD 20261115_1621.xlsx"}
+- compte rendu bailleur sans nom d'occupant – {"feuilles":["Synthèse","À repasser","À signaler"],"noms":false,"nR":2}
+- validation impossible sans case de contrôle
+- brouillon archivé (statut brouillon)
+- validation → téléchargement + archivage – SUIVI DU REMPLACEMENT DES BOUCHES NANTERRE PARC SUD 20261115_1621.xlsx
+- balises détectées dans le modèle – chantier,date,#logements
+- modèle rempli (balise éclatée, échappement, tableau) – "Chantier : Parc Sud & Fils le 15/11/2026\nN°\n1\n2\n\n"
+- modèle d'origine non modifié
+- import document
+- nouvelle version reconnue (même nom, autre indice)
+- doublon exact refusé
+- assistant : réponse sourcée, version remplacée signalée
+- assistant : « information non trouvée » sans invention
+- copie du document dans la base
+- donnée « Confirmé » sans source refusée
+- hypothèse sans source gardée « Hypothèse », quantité absente laissée vide – Hypothèse / null
+- listing : quantité calculée à partir des logements réels – ["Bouche cuisine hygro B",4,"calcul : 1 × 4 logement(s) T3"]
+- listing : quantité non calculable laissée vide et signalée
+- doublons de listing détectés puis regroupés sur décision – {"dbl":1,"apres":0,"min":38.400000000000006,"l0":[38.4,40],"manq":[2,2]}
+- comparatif : remise appliquée, moins cher identifié – [38.4,40]
+- paquet chantier déposé dans OneDrive/vers_telephone – eopur_chantier_8f68e357.zip
+- paquet : strict nécessaire (pas de nom d'occupant par défaut) – {"occ":false,"n":8,"it":1}
+- téléphone : chantier reçu
+- téléphone : logements de l'intervention du jour
+- téléphone : observation exigée pour un problème technique
+- téléphone : 4 saisies conservées localement
+- téléphone : paquet d'opérations produit
+- PC : paquet tronqué détecté et laissé en place – [{"nom":"eopur_operations_tronque.zip","etat":"illisible","ops":[]},{"nom":"eopur_operations_41a51540.zip","etat":"à intégrer","ops":["ok","conflit","ok","ok"]}]
+- PC : contrôle des opérations (3 ok, 1 conflit) – {"nom":"eopur_operations_41a51540.zip","etat":"à intégrer","ops":["ok","conflit","ok","ok"]}
+- rien n'est intégré avant validation
+- PC : intégration (résultats, anomalie, intervention réalisée partiellement)
+- PC : conflit enregistré, valeur du PC conservée
+- PC : sauvegarde automatique avant intégration
+- PC : paquet redéposé reconnu « déjà intégré » (pas de double intégration) – ["illisible","déjà intégré"]
+- conflit tranché : valeur du téléphone retenue et historisée
+- accusés « reçu » et « intégré » déposés – 4 accusé(s)
+- téléphone : toutes les saisies confirmées « intégré » – SaisiesEnregistré sur le téléphone0Transmis à OneDrive0Reçu par le PC0Intégré à la base4En conflit (à trancher sur le PC)0Refusé par le PC0Déjà reçu par le PC0 Envoyer 0 saisie(s) au PC Recevoir un chantier ou un accusé Envoyer : choisissez « Enregistrer dans Fichiers » › OneDrive › EOPUR_OS › vers_
+- fichiers traités déplacés dans « traites »
+- étude VMC exportée en Word (données non confirmées signalées)
+- aucune erreur JavaScript
+- chantier créé par le formulaire, fiche ouverte
+- interlocuteur ajouté
+- création en série par l'écran
+- avis de passage groupé produit (Word) – Avis de passage Cite_des_Fleurs 2030-05-05.docx
+- logements avisés passent « À prévenir »
+- intervention : 4 passages à saisir
+- saisie d'un résultat à l'écran
+- saisie groupée « réalisée » + intervention « Réalisée »
+- rapport de visite produit (Word) – Rapport de visite Cite_des_Fleurs 2026-11-15.docx
+- DOE : liste type créée
+- DOE : document lié → pièce « Fournie »
+- DOE : sommaire Word
+- DOE : bordereau Excel
+- import par le formulaire
+- fiche document avec aperçu du texte
+- listing : 2 lignes
+- listing exporté (Excel) – LISTING LISTING CAISSONS 20261115_1622.xlsx
+- demande de prix créée avec 2 fournisseurs
+- demande de prix Word + bordereau Excel à chiffrer – BORDEREAU A CHIFFRER Aldes.xlsx, Demande de prix Aldes Cite_des_Fleurs.docx
+- comparatif à l'écran (offre incomplète signalée)
+- comparatif exporté (Excel)
+- aucune erreur JavaScript
