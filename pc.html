@@ -1,0 +1,73 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EOPUR OS – Essai PC</title>
+<style>
+body{font:15px Segoe UI,Arial,sans-serif;margin:0;padding:24px;color:#1a1a1a;background:#fff;max-width:860px}
+h1{font-size:22px;color:#1F3864;margin:0 0 4px}h2{font-size:17px;margin:26px 0 8px;color:#1F3864}.s{font-size:13px;color:#555;margin:0 0 10px}
+button{padding:11px 18px;margin:6px 8px 6px 0;font-size:15px;border:0;border-radius:6px;background:#1F3864;color:#fff;cursor:pointer}button.g{background:#e9ecf2;color:#1F3864}
+#j{font:13px Consolas,monospace;white-space:pre-wrap;background:#f4f4f4;padding:12px;border-radius:6px;min-height:120px}
+.ok{color:#17691f;font-weight:600}.ko{color:#b00020;font-weight:600}#nav{padding:10px;border-radius:6px;font-weight:600}
+</style></head><body>
+<h1>EOPUR OS – Essai PC dans le navigateur <small style="font-size:12px;color:#555">v1</small></h1>
+<p class="s">Données fictives uniquement. Cette page ne fait aucun appel réseau en dehors de son propre chargement. Elle ne touche qu'aux deux dossiers que vous choisissez.</p>
+<p id="nav"></p>
+<h2>B5 – Base locale hors de OneDrive</h2>
+<p class="s">Créez d'abord un dossier <b>C:\EOPUR_OS_ESSAI</b> (hors de OneDrive), puis choisissez-le ici.</p>
+<button id="b5">1. Choisir le dossier de la base</button><span id="r5"></span>
+<h2>B6 – Lecture des paquets dans OneDrive</h2>
+<p class="s">Choisissez le dossier <b>OneDrive - GROUPE ISERBA\EOPUR_OS_ESSAI</b>.</p>
+<button id="b6">2. Choisir le dossier OneDrive d'essai</button><span id="r6"></span>
+<h2>Journal</h2><div id="j"></div><button class="g" id="cp">Copier le journal</button>
+<script src="jszip.min.js"></script><script src="sql-wasm.js"></script>
+<script>
+const $=id=>document.getElementById(id),J=[];let SQL,db,dosBase,nomBase='base_essai.sqlite';
+function log(m){J.push(new Date().toLocaleTimeString('fr-FR')+' '+m);$('j').textContent=J.join('\n');}
+async function sha(buf){const h=await crypto.subtle.digest('SHA-256',buf);return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('');}
+const un=(q)=>{const r=db.exec(q);return r.length?r[0].values[0][0]:null;};
+async function enregistrer(){const d=db.export();const h=await dosBase.getFileHandle(nomBase,{create:true});const w=await h.createWritable();await w.write(d);await w.close();return d.byteLength;}
+async function ouvrirBase(dir){dosBase=dir;let exist=null;try{exist=await (await dir.getFileHandle(nomBase)).getFile();}catch(e){}
+  db=exist?new SQL.Database(new Uint8Array(await exist.arrayBuffer())):new SQL.Database();
+  db.run("CREATE TABLE IF NOT EXISTS essais(id INTEGER PRIMARY KEY AUTOINCREMENT, quand TEXT NOT NULL, navigateur TEXT);CREATE TABLE IF NOT EXISTS paquets_traites(id_paquet TEXT PRIMARY KEY, empreinte TEXT NOT NULL, type TEXT, recu_le TEXT NOT NULL);");
+  return !!exist;}
+async function essaiB5(dir){
+  log('== B5 : base locale ==');log('Dossier choisi : '+dir.name);
+  const exist=await ouvrirBase(dir);log(exist?'Base existante rouverte depuis le dossier':'Nouvelle base créée');
+  db.run("INSERT INTO essais(quand,navigateur) VALUES(?,?)",[new Date().toISOString(),navigator.userAgent.includes('Edg/')?'Edge':'Chrome']);
+  const taille=await enregistrer();log('Base écrite dans le dossier : '+nomBase+' ('+taille+' octets)');
+  // relecture depuis le disque
+  const f=await (await dir.getFileHandle(nomBase)).getFile();const relu=new SQL.Database(new Uint8Array(await f.arrayBuffer()));
+  const n=relu.exec("SELECT COUNT(*) FROM essais")[0].values[0][0],ic=relu.exec("PRAGMA integrity_check")[0].values[0][0];relu.close();
+  log('Relecture depuis le disque : '+n+' lancement(s) enregistré(s)');log('Contrôle d\'intégrité : '+ic);log('Moteur : SQLite '+un('select sqlite_version()')+' (dans le navigateur)');
+  const ok=ic==='ok'&&n>=1&&f.size===taille;log('B5 : '+(ok?'RÉUSSI':'ÉCHEC'));$('r5').innerHTML=ok?'<span class="ok">RÉUSSI</span>':'<span class="ko">ÉCHEC</span>';return ok;}
+async function verifier(buf){let zip;try{zip=await JSZip.loadAsync(buf);}catch(e){throw new Error('paquet illisible');}
+  const mf=zip.file('manifeste.json');if(!mf)throw new Error('manifeste absent');const m=JSON.parse(await mf.async('string'));
+  if(m.format!=='eopur-os-paquet')throw new Error('format inconnu');if(m.version_format!==1)throw new Error('version de format non prise en charge');
+  if(!/^[0-9A-Za-z-]{8,64}$/.test(m.id_paquet||''))throw new Error('identifiant de paquet invalide');let ok=0;
+  for(const f of m.fichiers){const z=zip.file(f.nom);if(!z)throw new Error('fichier manquant : '+f.nom);const b=await z.async('arraybuffer');if(b.byteLength!==f.taille||await sha(b)!==f.sha256)throw new Error('empreinte différente : '+f.nom);ok++;}
+  return {m,ok};}
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+async function essaiB6(dir){
+  log('== B6 : paquets dans OneDrive ==');log('Dossier choisi : '+dir.name);if(!db){log('B6 ÉCHEC : faire B5 d\'abord');return false;}
+  let vus=0,conf=0,ref=0,dbl=0;
+  for await(const [nom,h] of dir.entries()){if(h.kind!=='file'||!nom.toLowerCase().endsWith('.zip'))continue;vus++;log('- '+nom);
+    try{const t0=performance.now();let f=await h.getFile();const t1=f.size;await pause(1500);f=await h.getFile();
+      if(f.size!==t1||f.size===0){log('    taille encore en mouvement : laissé pour plus tard');continue;}
+      const buf=await f.arrayBuffer(),e=await sha(buf);log('    '+buf.byteLength+' octets, empreinte '+e.slice(0,16)+', lu en '+Math.round(performance.now()-t0)+' ms');
+      const r=await verifier(buf);conf++;log('    paquet '+r.m.id_paquet+', type '+r.m.type+' : '+r.ok+' fichier(s) conforme(s)');
+      const deja=db.exec("SELECT COUNT(*) FROM paquets_traites WHERE id_paquet=?",[r.m.id_paquet])[0].values[0][0];
+      if(deja){dbl++;log('    déjà traité lors d\'un lancement précédent : ignoré (pas de doublon)');}
+      else{db.run("INSERT INTO paquets_traites VALUES(?,?,?,?)",[r.m.id_paquet,e,String(r.m.type||''),new Date().toISOString()]);log('    inscrit dans la base comme reçu');}
+    }catch(x){ref++;log('    REFUSÉ : '+x.message);}}
+  await enregistrer();log('Paquets vus : '+vus+' – conformes : '+conf+' – refusés : '+ref+' – déjà traités : '+dbl);
+  const ok=vus>0&&conf>0;log('B6 : '+(ok?'RÉUSSI':(vus?'ÉCHEC':'aucun paquet .zip dans ce dossier')));
+  // écriture d'un rapport dans OneDrive (sens PC -> OneDrive, futur accusé)
+  try{const d=new Date(),p=n=>String(n).padStart(2,'0'),nom='rapport_pc_navigateur_'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'.txt';
+    const w=await (await dir.getFileHandle(nom,{create:true})).createWritable();await w.write('\ufeff'+J.join('\r\n')+'\r\n');await w.close();log('Rapport écrit dans le dossier OneDrive : '+nom);}
+  catch(x){log('Rapport NON écrit dans OneDrive : '+x.message);}
+  $('r6').innerHTML=ok?'<span class="ok">RÉUSSI</span>':'<span class="ko">À REVOIR</span>';return ok;}
+$('b5').onclick=async()=>{try{const d=await window.showDirectoryPicker({mode:'readwrite',id:'eopur-base'});await essaiB5(d);}catch(x){log('B5 interrompu : '+x.name+' – '+x.message);}};
+$('b6').onclick=async()=>{try{const d=await window.showDirectoryPicker({mode:'readwrite',id:'eopur-onedrive'});await essaiB6(d);}catch(x){log('B6 interrompu : '+x.name+' – '+x.message);}};
+$('cp').onclick=async()=>{try{await navigator.clipboard.writeText(J.join('\n'));log('journal copié');}catch(x){log('copie impossible : sélectionner le texte à la main');}};
+(async()=>{const okNav='showDirectoryPicker' in window;$('nav').textContent=okNav?'Navigateur compatible : accès aux dossiers disponible.':'Navigateur NON compatible : ouvrir cette page dans Chrome ou Edge sur le PC.';$('nav').style.background=okNav?'#C6EFCE':'#FFC7CE';
+  try{SQL=await initSqlJs({locateFile:f=>f});log('Page prête ('+(navigator.userAgent.includes('Edg/')?'Edge':'Chrome ou autre')+').');}catch(x){log('SQLite indisponible dans ce navigateur : '+x.message);}})();
+window.__t={essaiB5,essaiB6};
+</script></body></html>
