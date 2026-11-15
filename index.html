@@ -13,7 +13,7 @@ button.g{background:#e9ecf2;color:#1F3864}input[type=text]{width:100%;box-sizing
 input[type=file]{display:none}#j{font:12px ui-monospace,Menlo,monospace;white-space:pre-wrap;background:#f4f4f4;padding:10px;border-radius:8px;max-height:240px;overflow:auto}
 li{font-size:14px;margin:4px 0}img.v{width:56px;height:56px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:8px}
 </style></head><body>
-<h1>EOPUR OS – Page d'essai</h1><p class="s">Données fictives uniquement. Rien n'est envoyé par cette page : elle ne fait aucun appel réseau en dehors de son propre chargement.</p>
+<h1>EOPUR OS – Page d'essai <small style="font-size:12px;color:#555">v2</small></h1><p id="mode" style="padding:10px;border-radius:8px;font-weight:600;margin:8px 0"></p><p class="s">Données fictives uniquement. Rien n'est envoyé par cette page : elle ne fait aucun appel réseau en dehors de son propre chargement.</p>
 <h2>B1 – Installation et hors ligne</h2><table id="etat"></table>
 <h2>B2 – Saisie conservée sur le téléphone</h2>
 <input type="text" id="note" placeholder="Observation d'essai (ex. logement 12, absent)">
@@ -25,17 +25,18 @@ li{font-size:14px;margin:4px 0}img.v{width:56px;height:56px;object-fit:cover;bor
 <h2>Journal</h2><div id="j"></div><button class="g" id="bCopie">Copier le journal</button><button class="g" id="bRaz">Tout effacer (essai seulement)</button>
 <script src="jszip.min.js"></script>
 <script>
-const $=id=>document.getElementById(id), J=[];
-function log(m){J.push(new Date().toISOString().slice(11,19)+' '+m);$('j').textContent=J.join('\n');}
+const $=id=>document.getElementById(id); let J=[];
+const INST=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+function log(m){const l=new Date().toISOString().slice(5,19).replace('T',' ')+' '+(INST?'[APP] ':'[SAFARI] ')+m;J.push(l);$('j').textContent=J.join('\n');if(db){try{tx('journal','readwrite').add({l});}catch(e){}}}
 const uuid=()=>crypto.randomUUID?crypto.randomUUID():([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
 async function sha(buf){const h=await crypto.subtle.digest('SHA-256',buf);return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('');}
-let db;function odb(){return new Promise((ok,ko)=>{const r=indexedDB.open('eopur-essai',1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('ops',{keyPath:'id'});d.createObjectStore('meta',{keyPath:'k'});};r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});}
+let db;function odb(){return new Promise((ok,ko)=>{const r=indexedDB.open('eopur-essai',2);r.onupgradeneeded=()=>{const d=r.result;for(const [n,o] of [['ops',{keyPath:'id'}],['meta',{keyPath:'k'}],['journal',{autoIncrement:true}]])if(!d.objectStoreNames.contains(n))d.createObjectStore(n,o);};r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});}
 const tx=(s,m='readonly')=>db.transaction(s,m).objectStore(s);
 const req=r=>new Promise((ok,ko)=>{r.onsuccess=()=>ok(r.result);r.onerror=()=>ko(r.error);});
 async function meta(k,v){if(v===undefined){const x=await req(tx('meta').get(k));return x&&x.v;}await req(tx('meta','readwrite').put({k,v}));}
 async function etat(){
   const ops=await req(tx('ops').getAll()); const ph=ops.filter(o=>o.photo);
-  const inst=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+  const inst=INST;
   let pers='inconnu',est='';try{pers=(await navigator.storage.persisted())?'oui':'non';const e=await navigator.storage.estimate();est=Math.round(e.usage/1024)+' ko utilisés';}catch(e){}
   const sw=navigator.serviceWorker&&navigator.serviceWorker.controller?'actif':'pas encore actif (recharger une fois)';
   const L=[['Ouverte depuis l\'écran d\'accueil',inst?'oui':'non',inst],['Réseau',navigator.onLine?'en ligne':'HORS LIGNE',true],['Fonctionnement hors ligne',sw,sw==='actif'],
@@ -67,8 +68,8 @@ async function verifier(file){
   for(const f of m.fichiers){const z=zip.file(f.nom); if(!z) throw new Error('fichier manquant : '+f.nom); const b=await z.async('arraybuffer'); if(await sha(b)!==f.sha256) throw new Error('empreinte différente : '+f.nom); ok++;}
   return {m,ok,h,taille:buf.byteLength};
 }
-$('bNote').onclick=async()=>{const t=$('note').value.trim();if(!t)return;await req(tx('ops','readwrite').put({id:uuid(),texte:t,cree:new Date().toISOString()}));$('note').value='';log('B2 observation enregistrée');etat();};
-$('photo').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const b=await reduire(f);await req(tx('ops','readwrite').put({id:uuid(),photo:b,cree:new Date().toISOString()}));log('B2 photo enregistrée : '+Math.round(f.size/1024)+' ko → '+Math.round(b.size/1024)+' ko');}catch(x){log('B2 ÉCHEC photo : '+x.message);}e.target.value='';etat();};
+$('bNote').onclick=async()=>{const t=$('note').value.trim();if(!t)return;await req(tx('ops','readwrite').put({id:uuid(),texte:t,cree:new Date().toISOString()}));$('note').value='';log('B2 observation enregistrée – relecture : '+(await req(tx('ops').count()))+' saisie(s) en base');etat();};
+$('photo').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const b=await reduire(f);await req(tx('ops','readwrite').put({id:uuid(),photo:b,cree:new Date().toISOString()}));log('B2 photo enregistrée : '+Math.round(f.size/1024)+' ko → '+Math.round(b.size/1024)+' ko – relecture : '+(await req(tx('ops').count()))+' saisie(s) en base');}catch(x){log('B2 ÉCHEC photo : '+x.message);}e.target.value='';etat();};
 $('bEnv').onclick=async()=>{try{const p=await fabriquer();const nom='eopur_paquet_'+p.id.slice(0,8)+'.zip',file=new File([p.blob],nom,{type:'application/zip'});
   log('B3 paquet '+p.id+' : '+p.n+' opérations, '+p.blob.size+' octets, empreinte '+p.h.slice(0,16));
   $('env').textContent='Paquet '+p.id.slice(0,8)+' – '+p.blob.size+' octets – empreinte '+p.h.slice(0,16);
@@ -77,11 +78,11 @@ $('bEnv').onclick=async()=>{try{const p=await fabriquer();const nom='eopur_paque
   etat();}catch(x){log('B3 ÉCHEC : '+x.message);}};
 $('recv').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const r=await verifier(f);$('rec').textContent='Paquet '+r.m.id_paquet.slice(0,8)+' lu : '+r.ok+' fichier(s) vérifié(s), '+r.taille+' octets, empreinte '+r.h.slice(0,16);log('B4 paquet reçu '+r.m.id_paquet+' type '+r.m.type+' : '+r.ok+' fichiers conformes, empreinte '+r.h.slice(0,16));}catch(x){$('rec').textContent='Refusé : '+x.message;log('B4 REFUS : '+x.message);}e.target.value='';};
 $('bCopie').onclick=async()=>{const t=$('etat').innerText+'\n'+J.join('\n');try{await navigator.clipboard.writeText(t);log('journal copié');}catch(x){log('copie impossible : sélectionner le texte à la main');}};
-$('bRaz').onclick=async()=>{if($('bRaz').dataset.c!=='1'){$('bRaz').dataset.c='1';$('bRaz').textContent='Toucher encore pour confirmer l\'effacement';return;}await req(tx('ops','readwrite').clear());$('bRaz').dataset.c='';$('bRaz').textContent='Tout effacer (essai seulement)';log('données d\'essai effacées');etat();};
+$('bRaz').onclick=async()=>{if($('bRaz').dataset.c!=='1'){$('bRaz').dataset.c='1';$('bRaz').textContent='Toucher encore pour confirmer l\'effacement';return;}await req(tx('ops','readwrite').clear());await req(tx('journal','readwrite').clear());J=[];$('bRaz').dataset.c='';$('bRaz').textContent='Tout effacer (essai seulement)';log('données d\'essai effacées');etat();};
 addEventListener('online',etat);addEventListener('offline',etat);
 (async()=>{db=await odb(); if(!await meta('app')){await meta('app',uuid());await meta('prem',new Date().toISOString().slice(0,19).replace('T',' '));}
-  await meta('ouv',((await meta('ouv'))||0)+1); try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(e){}
+  await meta('ouv',((await meta('ouv'))||0)+1); J=(await req(tx('journal').getAll())).map(x=>x.l); $('mode').textContent=INST?'APPLICATION INSTALLÉE (ouverte depuis l\'icône)':'SAFARI – cette fenêtre n\'est PAS l\'application installée'; $('mode').style.background=INST?'#C6EFCE':'#FFE0B2'; try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(e){}
   if('serviceWorker' in navigator){try{await navigator.serviceWorker.register('sw.js');}catch(e){log('B1 mode hors ligne indisponible : '+e.message);}}
-  log('ouverture n° '+await meta('ouv')+(navigator.onLine?' en ligne':' HORS LIGNE'));etat();})();
+  log('ouverture n° '+await meta('ouv')+(navigator.onLine?' en ligne':' HORS LIGNE')+' – '+(await req(tx('ops').count()))+' saisie(s) retrouvée(s) en base');etat();})();
 window.__t={fabriquer,verifier};
 </script></body></html>

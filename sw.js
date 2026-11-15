@@ -1,4 +1,4 @@
-const V='essai-v1';
+const V='essai-v2';
 const F=['./','./index.html','./jszip.min.js','./manifest.webmanifest','./icone-180.png','./icone-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(F)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==V).map(x=>caches.delete(x)))).then(()=>self.clients.claim()));});
